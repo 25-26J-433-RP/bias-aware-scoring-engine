@@ -1,0 +1,29 @@
+# virtual envs
+.venv/
+venv/
+env/
+
+# python bytecode & caches
+**/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# editors/IDE
+.vscode/
+.idea/
+
+# logs & temp
+*.log
+*.tmp
+
+# data/models (keep out of repo; use LFS later if needed)
+models/
+data/
+
+# OS cruft
+.DS_Store
+Thumbs.db
