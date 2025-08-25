@@ -3,7 +3,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from .schemas import EssayIn, ScoreOut
 from .scorer import score_essay
-from .fairness import empty_fairness_report
+from .fairness import demo_fairness_report
 
 app = FastAPI(title="Bias-Aware Scoring Engine", version="0.1.0")
 
@@ -32,5 +32,10 @@ def root():
 @app.post("/score", response_model=ScoreOut)
 def score(payload: EssayIn):
     score_value, details = score_essay(payload.text, payload.prompt)
-    fr = empty_fairness_report()
+    fr = demo_fairness_report()  # Phase 2: synthetic fairness numbers
     return {"score": round(score_value, 2), "details": details, "fairness_report": fr.model_dump()}
+
+@app.get("/fairness/smoke", tags=["fairness"])
+def fairness_smoke():
+    return demo_fairness_report()
+

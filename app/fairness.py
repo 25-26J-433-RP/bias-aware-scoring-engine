@@ -1,5 +1,57 @@
+from __future__ import annotations
+import numpy as np
+from typing import Iterable, Optional
 from .schemas import FairnessReport
 
-def empty_fairness_report() -> FairnessReport:
-    # Phase 1 placeholders (real metrics come in Phase 2)
-    return FairnessReport(spd=0.0, dir=1.0, eod=0.0, mitigation_used=None)
+
+def _to_np(x: Iterable) -> np.ndarray:
+    arr = np.asarray(list(x))
+    if arr.ndim != 1:
+        raise ValueError("Input must be 1-D")
+    return arr
+
+
+def binarize(scores: Iterable[float], cutoff: float = 60.0) -> np.ndarray:
+    s = _to_np(scores).astype(float)
+    return (s >= cutoff).astype(int)
+
+
+def _rate(mask: np.ndarray, positives: np.ndarray) -> float:
+    return float(positives[mask].mean()) if mask.sum() > 0 else 0.0
+
+
+def spd(y_hat_bin: Iterable[int], groups: Iterable[bool]) -> float:
+    yb = _to_np(y_hat_bin).astype(int)
+    g = _to_np(groups).astype(bool)
+    return _rate(~g, yb) - _rate(g, yb)
+
+
+def dir_ratio(y_hat_bin: Iterable[int], groups: Iterable[bool]) -> float:
+    yb = _to_np(y_hat_bin).astype(int)
+    g = _to_np(groups).astype(bool)
+    rate_a, rate_b = _rate(~g, yb), _rate(g, yb)
+    return float(rate_a / rate_b) if rate_b > 0 else float("inf")
+
+
+def eod(y_hat_bin: Iterable[int], y_true: Iterable[int], groups: Iterable[bool]) -> float:
+    yb = _to_np(y_hat_bin).astype(int)
+    yt = _to_np(y_true).astype(int)
+    g = _to_np(groups).astype(bool)
+    return _rate((~g) & (yt == 1), yb) - _rate((g) & (yt == 1), yb)
+
+
+def demo_fairness_report(n: int = 50, seed: int = 0) -> FairnessReport:
+    """Synthetic cohort with bias for CI smoke test."""
+    rng = np.random.default_rng(seed)
+    groups = rng.random(n) < 0.5
+    ability = rng.standard_normal(n)
+    scores = 70 + 10 * ability - 8 * groups.astype(float)
+    scores = np.clip(scores, 0, 100)
+    y_true = (ability >= 0).astype(int)
+    y_hat_bin = binarize(scores, 60)
+    return FairnessReport(
+        spd=spd(y_hat_bin, groups),
+        dir=dir_ratio(y_hat_bin, groups),
+        eod=eod(y_hat_bin, y_true, groups),
+        mitigation_used=None,
+    )
