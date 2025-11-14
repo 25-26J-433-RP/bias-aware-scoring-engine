@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from .schemas import EssayIn, ScoreOut
 from .scorer import score_essay
 from .fairness import demo_fairness_report
+from .sinhala_baseline import baseline_sinhala_score
+from .schemas import SinhalaEssayIn
 
 app = FastAPI(title="Bias-Aware Scoring Engine", version="0.1.0")
 
@@ -38,4 +40,13 @@ def score(payload: EssayIn):
 @app.get("/fairness/smoke", tags=["fairness"])
 def fairness_smoke():
     return demo_fairness_report()
+
+@app.post("/score-sinhala", response_model=ScoreOut)
+def score_sinhala(payload: SinhalaEssayIn):
+    score_value, details = baseline_sinhala_score(payload.text)
+    return {
+        "score": score_value,
+        "details": details,
+        "fairness_report": None  # now allowed because ScoreOut makes it optional
+    }
 
