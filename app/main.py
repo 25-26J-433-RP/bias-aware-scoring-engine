@@ -18,6 +18,8 @@ app.add_middleware(
         "http://localhost:19006",
         "http://127.0.0.1:19006",
         "https://akura.vercel.app",
+        "*",
+        
     ],
     allow_credentials=True,
     allow_methods=["*"],
