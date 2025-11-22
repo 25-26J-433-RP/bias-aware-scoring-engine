@@ -13,6 +13,8 @@ jobs:
       TRANSFORMERS_CACHE: /home/runner/.cache/huggingface
       SENTENCE_TRANSFORMERS_HOME: /home/runner/.cache/huggingface
       TOKENIZERS_PARALLELISM: "false"
+      SKIP_MODEL_LOAD: "true"
+
 
     steps:
       - uses: actions/checkout@v4
