@@ -30,7 +30,9 @@ def dir_ratio(y_hat_bin: Iterable[int], groups: Iterable[bool]) -> float:
     yb = _to_np(y_hat_bin).astype(int)
     g = _to_np(groups).astype(bool)
     rate_a, rate_b = _rate(~g, yb), _rate(g, yb)
-    return float(rate_a / rate_b) if rate_b > 0 else float("inf")
+
+    # SAFE FIX — prevent infinity
+    return float(rate_a / rate_b) if rate_b > 0 else 1.0
 
 
 def eod(y_hat_bin: Iterable[int], y_true: Iterable[int], groups: Iterable[bool]) -> float:
@@ -40,8 +42,17 @@ def eod(y_hat_bin: Iterable[int], y_true: Iterable[int], groups: Iterable[bool])
     return _rate((~g) & (yt == 1), yb) - _rate((g) & (yt == 1), yb)
 
 
+def safe_float(x: float) -> float:
+    if x is None:
+        return 0.0
+    if x != x:  # NaN
+        return 0.0
+    if x in [float("inf"), float("-inf")]:
+        return 1.0
+    return float(x)
+
+
 def demo_fairness_report(n: int = 50, seed: int = 0) -> FairnessReport:
-    """Synthetic cohort with bias for CI smoke test."""
     rng = np.random.default_rng(seed)
     groups = rng.random(n) < 0.5
     ability = rng.standard_normal(n)
@@ -49,9 +60,10 @@ def demo_fairness_report(n: int = 50, seed: int = 0) -> FairnessReport:
     scores = np.clip(scores, 0, 100)
     y_true = (ability >= 0).astype(int)
     y_hat_bin = binarize(scores, 60)
+
     return FairnessReport(
-        spd=spd(y_hat_bin, groups),
-        dir=dir_ratio(y_hat_bin, groups),
-        eod=eod(y_hat_bin, y_true, groups),
+        spd=safe_float(spd(y_hat_bin, groups)),
+        dir=safe_float(dir_ratio(y_hat_bin, groups)),
+        eod=safe_float(eod(y_hat_bin, y_true, groups)),
         mitigation_used=None,
     )
