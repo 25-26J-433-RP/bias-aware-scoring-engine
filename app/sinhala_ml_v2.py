@@ -21,11 +21,18 @@ else:
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
     model = SinhalaRegressorV2(model_name=MODEL_NAME)
+
+try:
     model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
     model.to(DEVICE)
     model.eval()
-
     print("✅ Sinhala XLM-R V2 model loaded.")
+
+except Exception as e:
+    print("⚠️ Model load failed → Using fallback baseline scorer.")
+    print("Reason:", str(e))
+    model = None
+
 
 
 def score_sinhala_ml_v2(text: str, topic: str) -> float:
