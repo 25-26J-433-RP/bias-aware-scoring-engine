@@ -17,8 +17,15 @@ if SKIP_MODEL_LOAD:
     model = None
 
 else:
+
     print("🔄 Loading Sinhala XLM-R V2 model...")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    cache_dir = os.environ.get("TRANSFORMERS_CACHE", "/app/hf_cache")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, cache_dir=cache_dir, local_files_only=True)
+
+    # Also ensure model is loaded from local cache only
+    model = SinhalaRegressorV2(model_name=MODEL_NAME)
+    if hasattr(model, 'from_pretrained'):
+        model = model.from_pretrained(MODEL_NAME, cache_dir=cache_dir, local_files_only=True)
 
     model = SinhalaRegressorV2(model_name=MODEL_NAME)
 
