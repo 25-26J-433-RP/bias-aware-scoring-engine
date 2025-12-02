@@ -29,6 +29,7 @@ app.add_middleware(
         "http://localhost:19006",
         "http://127.0.0.1:19006",
         "https://akura.vercel.app",
+        "https://sinhala-essay-grading-api-gateway-651457725719.europe-west1.run.app",
         "*",
         
     ],
