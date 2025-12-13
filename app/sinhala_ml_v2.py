@@ -1,69 +1,52 @@
-import os
+# app/sinhala_ml_v2.py
+
 import torch
 from transformers import AutoTokenizer
-from app.sin_model_v2 import SinhalaRegressorV2
+from .sin_model_v2 import SinhalaRegressorV2
 
-MODEL_NAME = "xlm-roberta-base"
-MODEL_PATH = "models/sinhala_v2_regressor.pt"
+BASE_TOKENIZER = "xlm-roberta-large"
+MODEL_NAME = "akura-official/xlm-roberta-large-sinhala-multihead"
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# 🔥 Detect whether we are inside GitHub Actions (CI mode)
-SKIP_MODEL_LOAD = os.getenv("SKIP_MODEL_LOAD") == "true"
+print("🔄 Loading Sinhala multi-head model...")
 
-if SKIP_MODEL_LOAD:
-    print("⚠️ SKIP_MODEL_LOAD=true → CI mode active. Sinhala ML model will NOT be loaded.")
-    tokenizer = None
-    model = None
+tokenizer = AutoTokenizer.from_pretrained(
+    BASE_TOKENIZER,
+    use_fast=False
+)
 
-else:
+model = SinhalaRegressorV2(MODEL_NAME)
 
-    print("🔄 Loading Sinhala XLM-R V2 model...")
-    cache_dir = os.environ.get("TRANSFORMERS_CACHE", "/app/hf_cache")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, cache_dir=cache_dir, local_files_only=True)
+# 🔑 🔑 🔑 THIS IS THE FIX
+model.encoder.resize_token_embeddings(len(tokenizer))
 
-    # Also ensure model is loaded from local cache only
-    model = SinhalaRegressorV2(model_name=MODEL_NAME)
-    if hasattr(model, 'from_pretrained'):
-        model = model.from_pretrained(MODEL_NAME, cache_dir=cache_dir, local_files_only=True)
+model.to(DEVICE)
+model.eval()
 
-    model = SinhalaRegressorV2(model_name=MODEL_NAME)
-
-try:
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
-    model.to(DEVICE)
-    model.eval()
-    print("✅ Sinhala XLM-R V2 model loaded.")
-
-except Exception as e:
-    print("⚠️ Model load failed → Using fallback baseline scorer.")
-    print("Reason:", str(e))
-    model = None
+print("✅ Sinhala ML model loaded successfully.")
 
 
-
-def score_sinhala_ml_v2(text: str, topic: str) -> float:
-    """Predict a score using the trained Sinhala V2 model."""
-
-    if model is None:
-        raise RuntimeError("❌ Sinhala ML model disabled in CI mode. Enable it in production/local run.")
-
-    # Combine topic + essay
-    combined = f"[TOPIC={topic}] " + text
-
-    enc = tokenizer(
-        combined,
+def score_sinhala_ml_v2(text: str, grade: int, topic: str) -> dict:
+    inputs = tokenizer(
+        text,
+        return_tensors="pt",
         truncation=True,
-        padding="max_length",
-        max_length=256,
-        return_tensors="pt"
+        padding=True,
+        max_length=512
     )
 
-    input_ids = enc["input_ids"].to(DEVICE)
-    attention_mask = enc["attention_mask"].to(DEVICE)
+    inputs = {k: v.to(DEVICE) for k, v in inputs.items()}
 
     with torch.no_grad():
-        output = model(input_ids, attention_mask).squeeze().item()
+        outputs = model(
+            input_ids=inputs["input_ids"],
+            attention_mask=inputs["attention_mask"]
+        )
 
-    output = max(0, min(100, output))
-    return round(output, 2)
+    return {
+        "richness_5": round(outputs["richness_5"].item(), 2),
+        "organization_6": round(outputs["organization_6"].item(), 2),
+        "technical_3": round(outputs["technical_3"].item(), 2),
+        "total_14": round(outputs["total_14"].item(), 2),
+    }
