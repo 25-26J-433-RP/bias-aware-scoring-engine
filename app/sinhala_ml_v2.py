@@ -2,51 +2,40 @@
 
 import torch
 from transformers import AutoTokenizer
-from .sin_model_v2 import SinhalaRegressorV2
+from .model_multitask_xlmr import SinhalaMultiHeadRegressor
 
-BASE_TOKENIZER = "xlm-roberta-large"
-MODEL_NAME = "akura-official/xlm-roberta-large-sinhala-multihead"
-
+MODEL_SOURCE = "models/xlm-roberta-large-sinhala-multihead"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-print("🔄 Loading Sinhala multi-head model...")
-
-tokenizer = AutoTokenizer.from_pretrained(
-    BASE_TOKENIZER,
-    use_fast=False
-)
-
-model = SinhalaRegressorV2(MODEL_NAME)
-
-# 🔑 🔑 🔑 THIS IS THE FIX
-model.encoder.resize_token_embeddings(len(tokenizer))
-
+tokenizer = AutoTokenizer.from_pretrained(MODEL_SOURCE, use_fast=False)
+model = SinhalaMultiHeadRegressor.from_pretrained(MODEL_SOURCE)
 model.to(DEVICE)
 model.eval()
 
-print("✅ Sinhala ML model loaded successfully.")
-
-
-def score_sinhala_ml_v2(text: str, grade: int, topic: str) -> dict:
-    inputs = tokenizer(
+def score_sinhala_ml_v2(text: str, grade: int) -> dict:
+    enc = tokenizer(
         text,
         return_tensors="pt",
         truncation=True,
-        padding=True,
         max_length=512
     )
 
-    inputs = {k: v.to(DEVICE) for k, v in inputs.items()}
+    input_ids = enc["input_ids"].to(DEVICE)
+    attention_mask = enc["attention_mask"].to(DEVICE)
+
+    # ✅ MUST be torch.long
+    grade_tensor = torch.tensor([grade], dtype=torch.long, device=DEVICE)
 
     with torch.no_grad():
         outputs = model(
-            input_ids=inputs["input_ids"],
-            attention_mask=inputs["attention_mask"]
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            grade_id=grade_tensor
         )
 
     return {
-        "richness_5": round(outputs["richness_5"].item(), 2),
-        "organization_6": round(outputs["organization_6"].item(), 2),
-        "technical_3": round(outputs["technical_3"].item(), 2),
-        "total_14": round(outputs["total_14"].item(), 2),
+        "richness_5": round(float(outputs["richness_5"]), 2),
+        "organization_6": round(float(outputs["organization_6"]), 2),
+        "technical_3": round(float(outputs["technical_3"]), 2),
+        "total_14": round(float(outputs["total_14"]), 2),
     }

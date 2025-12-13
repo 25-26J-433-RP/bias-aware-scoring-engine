@@ -64,28 +64,25 @@ def score_sinhala(payload: SinhalaEssayIn):
 # -----------------------------
 @app.post("/score-sinhala-ml", response_model=SinhalaMLOut)
 def score_sinhala_ml(payload: SinhalaEssayIn):
-
     scores = score_sinhala_ml_v2(
-        payload.text,
-        payload.grade,
-        payload.topic or ""
+        text=payload.text,
+        grade=payload.grade
     )
 
     final_score = min(100, (scores["total_14"] / 14) * 100)
 
     return {
         "score": round(final_score, 2),
+        "rubric": scores,
         "details": {
-            "model": "xlm-roberta-multihead",
             "grade": payload.grade,
             "topic": payload.topic,
             "dyslexic_flag": payload.dyslexic_flag,
-            "error_tags": payload.error_tags
+            "error_tags": payload.error_tags,
+            "model": "xlm-roberta-large-sinhala-multihead"
         },
-        "rubric": SinhalaRubricOut(**scores).model_dump(),
         "fairness_report": None
     }
-
 
 # -----------------------------
 # Batch Fairness Evaluation
