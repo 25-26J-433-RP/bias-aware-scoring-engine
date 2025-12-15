@@ -13,7 +13,7 @@ jobs:
       TRANSFORMERS_CACHE: /home/runner/.cache/huggingface
       SENTENCE_TRANSFORMERS_HOME: /home/runner/.cache/huggingface
       TOKENIZERS_PARALLELISM: "false"
-      SKIP_MODEL_LOAD: "true"
+      DISABLE_ML: "1"
 
 
     steps:
@@ -55,7 +55,9 @@ jobs:
           black --check .
 
       - name: Run tests
-        run: pytest -q
+        run: |
+          export DISABLE_ML=1
+          pytest -q
 
   build-and-push:
     name: Build and push Docker image

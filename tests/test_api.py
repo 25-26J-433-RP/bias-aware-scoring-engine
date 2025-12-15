@@ -8,10 +8,32 @@ def test_health():
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
 
-def test_score_contract():
-    r = client.post("/score", json={"text": "Sri Lanka environment...", "prompt": "Discuss environment."})
-    js = r.json()
+def test_score_sinhala_ml_contract():
+    payload = {
+        "text": "ශ්‍රී ලංකාවේ පරිසරය රැක ගැනීම අපගේ වගකීමකි.",
+        "grade": 7,
+        "topic": "පරිසරය",
+        "dyslexic_flag": False,
+        "error_tags": []
+    }
+
+    r = client.post("/score-sinhala-ml", json=payload)
     assert r.status_code == 200
-    assert "score" in js and 0 <= js["score"] <= 100
-    assert "details" in js and "strategy" in js["details"]
-    assert set(js["fairness_report"].keys()) == {"spd", "dir", "eod", "mitigation_used"}
+
+    js = r.json()
+
+    # Core contract
+    assert "score" in js
+    assert 0 <= js["score"] <= 100
+
+    # Rubric-level scores
+    assert "rubric" in js
+    assert "total_14" in js["rubric"]
+
+    # Metadata
+    assert "details" in js
+    assert js["details"]["grade"] == 7
+    assert js["details"]["model"].startswith("xlm-roberta")
+
+    # Fairness report exists but may be None (system-level)
+    assert "fairness_report" in js

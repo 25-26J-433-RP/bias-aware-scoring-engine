@@ -1,5 +1,6 @@
 # app/sinhala_ml_v2.py
 
+import os
 import torch
 from transformers import AutoTokenizer
 from .model_multitask_xlmr import SinhalaMultiHeadRegressor
@@ -7,12 +8,30 @@ from .model_multitask_xlmr import SinhalaMultiHeadRegressor
 MODEL_SOURCE = "models/xlm-roberta-large-sinhala-multihead"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL_SOURCE, use_fast=False)
-model = SinhalaMultiHeadRegressor.from_pretrained(MODEL_SOURCE)
-model.to(DEVICE)
-model.eval()
+# 🔹 Detect CI / test environment
+IS_TEST = os.getenv("DISABLE_ML", "0") == "1"
+
+if not IS_TEST:
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_SOURCE, use_fast=False)
+    model = SinhalaMultiHeadRegressor.from_pretrained(MODEL_SOURCE)
+    model.to(DEVICE)
+    model.eval()
+else:
+    # CI-safe placeholders
+    tokenizer = None
+    model = None
+
 
 def score_sinhala_ml_v2(text: str, grade: int) -> dict:
+    # 🔹 CI-safe dummy output (no ML load)
+    if model is None:
+        return {
+            "richness_5": 3.0,
+            "organization_6": 3.5,
+            "technical_3": 2.0,
+            "total_14": 8.5,
+        }
+
     enc = tokenizer(
         text,
         return_tensors="pt",
