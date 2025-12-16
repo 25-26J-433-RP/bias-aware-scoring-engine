@@ -11,7 +11,7 @@ def _to_np(x: Iterable) -> np.ndarray:
     return arr
 
 
-def binarize(scores: Iterable[float], cutoff: float = 60.0) -> np.ndarray:
+def binarize(scores: Iterable[float], cutoff: float = 75.0) -> np.ndarray:
     s = _to_np(scores).astype(float)
     return (s >= cutoff).astype(int)
 
@@ -59,7 +59,7 @@ def demo_fairness_report(n: int = 50, seed: int = 0) -> FairnessReport:
     scores = 70 + 10 * ability - 8 * groups.astype(float)
     scores = np.clip(scores, 0, 100)
     y_true = (ability >= 0).astype(int)
-    y_hat_bin = binarize(scores, 60)
+    y_hat_bin = binarize(scores, 75)
 
     return FairnessReport(
         spd=safe_float(spd(y_hat_bin, groups)),

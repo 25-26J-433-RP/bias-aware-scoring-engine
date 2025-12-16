@@ -27,3 +27,5 @@ data/
 # OS cruft
 .DS_Store
 Thumbs.db
+
+serviceAccountKey.json
