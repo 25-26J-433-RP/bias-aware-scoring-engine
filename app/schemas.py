@@ -13,7 +13,7 @@ class EssayIn(BaseModel):
 class FairnessReport(BaseModel):
     spd: float
     dir: float
-    eod: float
+    eod: Optional[float] = None
     mitigation_used: Optional[str] = None
 
 
@@ -58,3 +58,4 @@ class FairnessEvalIn(BaseModel):
     score: float = Field(..., ge=0, le=100)
     y_true: int = Field(..., description="1 = pass, 0 = fail")
     dyslexic_flag: bool
+    grade: int = Field(..., ge=3, le=8)
