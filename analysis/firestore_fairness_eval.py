@@ -5,10 +5,14 @@ from datetime import datetime
 
 from app.fairness import binarize, spd, dir_ratio
 
+# =================================================
 # NOTE:
-# Equal Opportunity Difference (EOD) requires teacher labels.
-# Teacher scores are NOT available in Firestore.
-# Therefore, EOD is evaluated separately using annotated training data.
+# Equal Opportunity Difference (EOD) requires
+# teacher-annotated ground truth labels.
+# These are NOT available in Firestore.
+# Therefore, EOD is intentionally NOT computed here.
+# =================================================
+
 
 # -----------------------------
 # 1. Initialize Firestore
@@ -17,6 +21,7 @@ cred = credentials.Certificate("serviceAccountKey.json")
 firebase_admin.initialize_app(cred)
 
 db = firestore.client()
+
 
 # -----------------------------
 # 2. Fetch batch essays (by grade)
@@ -28,23 +33,41 @@ def fetch_user_images(grade_filter: int):
     for doc in docs:
         d = doc.to_dict()
 
+        # Required fields
         if "score" not in d or "details" not in d:
             continue
 
-        details = d["details"]
+        # -------- grade parsing (ROBUST) --------
+        raw_grade = d.get("studentGrade")
 
-        if details.get("grade") != grade_filter:
+        if raw_grade is None:
             continue
+
+        try:
+            if isinstance(raw_grade, int):
+                grade = raw_grade
+            elif isinstance(raw_grade, str):
+                grade = int(raw_grade.lower().replace("grade", "").strip())
+            else:
+                continue
+        except ValueError:
+            continue
+
+        if grade != grade_filter:
+            continue
+
+        details = d.get("details", {})
 
         rows.append({
             "doc_id": doc.id,
             "score": d["score"],
             "dyslexic_flag": details.get("dyslexic_flag", False),
             "gender": d.get("studentGender"),
-            "grade": details.get("grade"),
+            "grade": grade,
         })
 
     return pd.DataFrame(rows)
+
 
 # -------------------------------------------------
 # 3. Store fairness results as separate documents
@@ -63,6 +86,7 @@ def store_fairness_report(report: dict):
         "data_source": "Firestore:userImages",
         "notes": "Only successfully scored essays included"
     })
+
 
 # -----------------------------
 # 4. Run grade-wise fairness evaluation
@@ -95,10 +119,10 @@ def run_fairness_eval():
         for k, v in report.items():
             print(f"{k}: {v}")
 
-        # Store batch-level fairness result
         store_fairness_report(report)
 
     print("\n✅ Fairness evaluation completed for all grades.")
+
 
 # -----------------------------
 # Entry point

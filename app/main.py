@@ -75,8 +75,6 @@ def score_sinhala_ml(payload: SinhalaEssayIn):
         "score": round(final_score, 2),
         "rubric": scores,
         "details": {
-            "grade": payload.grade,
-            "topic": payload.topic,
             "dyslexic_flag": payload.dyslexic_flag,
             "error_tags": payload.error_tags,
             "model": "xlm-roberta-large-sinhala-multihead"
