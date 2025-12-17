@@ -32,8 +32,10 @@ def test_score_sinhala_ml_contract():
 
     # Metadata
     assert "details" in js
-    assert js["details"]["grade"] == 7
     assert js["details"]["model"].startswith("xlm-roberta")
 
-    # Fairness report exists but may be None (system-level)
+    # Grade is intentionally NOT duplicated in details
+    assert "grade" not in js["details"]
+
+    # Fairness report exists (system-level, may be None)
     assert "fairness_report" in js
