@@ -12,6 +12,7 @@ from .schemas import (
 from .scorer import score_essay
 from .sinhala_baseline import baseline_sinhala_score
 from .sinhala_ml_v2 import score_sinhala_ml_v2
+from .grade_detector import infer_grade_from_text
 from .fairness import spd, dir_ratio, eod, binarize
 
 app = FastAPI(title="Bias-Aware Sinhala Essay Grader", version="1.0.0")
@@ -61,12 +62,19 @@ def score_sinhala(payload: SinhalaEssayIn):
 
 # -----------------------------
 # Sinhala ML Scoring (MAIN)
+# Grade-aware: Automatically detects grade if not provided
 # -----------------------------
 @app.post("/score-sinhala-ml", response_model=SinhalaMLOut)
 def score_sinhala_ml(payload: SinhalaEssayIn):
+    # Detect or use provided grade
+    detected_grade = infer_grade_from_text(payload.text, payload.grade)
+    
+    # DEBUG: Log what grade was received and used
+    print(f"[SCORE-SINHALA-ML] Received grade: {payload.grade}, Using grade: {detected_grade}")
+    
     scores = score_sinhala_ml_v2(
         text=payload.text,
-        grade=payload.grade
+        grade=detected_grade
     )
 
     final_score = min(100, (scores["total_14"] / 14) * 100)
@@ -77,7 +85,9 @@ def score_sinhala_ml(payload: SinhalaEssayIn):
         "details": {
             "dyslexic_flag": payload.dyslexic_flag,
             "error_tags": payload.error_tags,
-            "model": "xlm-roberta-large-sinhala-multihead"
+            "model": "xlm-roberta-large-sinhala-multihead",
+            "detected_grade": detected_grade,
+            "grade_auto_detected": payload.grade is None
         },
         "fairness_report": None
     }
