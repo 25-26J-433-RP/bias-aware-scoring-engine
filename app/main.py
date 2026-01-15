@@ -116,3 +116,20 @@ def fairness_eval(payload: List[FairnessEvalIn]):
         eod=eod(y_hat_bin, y_true, groups),
         mitigation_used="Reweighing (planned)"
     )
+
+
+# -----------------------------
+# Cloud Run / Server startup
+# -----------------------------
+import os
+import uvicorn
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        log_level="info"
+    )
+

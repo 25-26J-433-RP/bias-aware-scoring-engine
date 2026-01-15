@@ -12,8 +12,17 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 IS_TEST = os.getenv("DISABLE_ML", "0") == "1"
 
 if not IS_TEST:
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_SOURCE, use_fast=False)
-    model = SinhalaMultiHeadRegressor.from_pretrained(MODEL_SOURCE)
+    tokenizer = AutoTokenizer.from_pretrained(
+        MODEL_SOURCE,
+        use_fast=False,
+        trust_remote_code=True
+    )
+
+    model = SinhalaMultiHeadRegressor.from_pretrained(
+        MODEL_SOURCE,
+        trust_remote_code=True
+    )
+
     model.to(DEVICE)
     model.eval()
 else:
