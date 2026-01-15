@@ -20,8 +20,8 @@ RUN python -m pip install --upgrade pip setuptools wheel
 
 # Install Python dependencies from pyproject (explicit install to avoid build-system complexity)
 # Use --no-cache-dir to keep the image small and prefer binary wheels when available.
-RUN pip install --no-cache-dir --prefer-binary fastapi "uvicorn[standard]" pydantic numpy scikit-learn transformers \
-	&& pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir --prefer-binary fastapi "uvicorn[standard]" pydantic numpy scikit-learn transformers sentencepiece protobuf \
+    && pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
 COPY app/ /app/app/
 COPY pyproject.toml /app/
@@ -34,7 +34,7 @@ COPY pytest.ini /app/
 RUN python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('xlm-roberta-base', cache_dir='/app/hf_cache')"
 RUN python -c "from transformers import AutoModel; AutoModel.from_pretrained('xlm-roberta-base', cache_dir='/app/hf_cache')"
 
-EXPOSE 8004
-
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8004}"]
+
+
 
