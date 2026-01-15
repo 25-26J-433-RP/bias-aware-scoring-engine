@@ -63,19 +63,23 @@ def _analyze_length(text: str) -> float:
     
     avg_words_per_sentence = word_count / sentence_count
     
-    # Grade 3: ~30-50 words, avg 5-8 words/sentence
-    # Grade 5: ~100-150 words, avg 10-15 words/sentence  
+    # Grade 3: ~15-30 words, avg 3-5 words/sentence
+    # Grade 4: ~30-80 words, avg 5-10 words/sentence
+    # Grade 5: ~80-150 words, avg 10-15 words/sentence  
+    # Grade 6+: ~150-250 words, avg 15+ words/sentence
     # Grade 8: ~250+ words, avg 15+ words/sentence
     
     # Normalize length to 3-8 scale
-    if word_count < 30:
+    if word_count < 15:
         return 3.0
-    elif word_count < 80:
+    elif word_count < 30:
         return 4.0
-    elif word_count < 150:
+    elif word_count < 80:
         return 5.0
+    elif word_count < 150:
+        return 6.0
     elif word_count < 250:
-        return 6.5
+        return 7.0
     else:
         return 8.0
 
@@ -95,7 +99,7 @@ def _analyze_complexity(text: str) -> float:
     for sentence in sentences:
         # Count conjunctions and complex structures
         # Common Sinhala conjunctions: ඉතා, එවිට, කෙසේ නම්, ද, ගෙන, ගත්, විට, හෝ
-        conjunctions = len(re.findall(r'(ඉතා|එවිට|ගෙන|විට|හෝ|ද|ගත්)', sentence))
+        conjunctions = len(re.findall(r'(ඉතා|එවිට|ගෙන|විට|හෝ|ද|ගත්|ගැන|ගේ)', sentence))
         
         # Count clauses (roughly by commas and complex markers)
         commas = sentence.count('،') + sentence.count(',')
@@ -108,11 +112,11 @@ def _analyze_complexity(text: str) -> float:
         if word_in_sentence < 5:
             score = 3.0
         elif word_in_sentence < 10:
-            score = 4.0 + (clause_count * 0.2)
+            score = 4.0 + (clause_count * 0.3)
         elif word_in_sentence < 20:
-            score = 5.0 + (clause_count * 0.3)
+            score = 5.0 + (clause_count * 0.4)
         else:
-            score = 6.0 + (clause_count * 0.4)
+            score = 6.0 + (clause_count * 0.5)
         
         complexity_scores.append(min(8.0, score))
     
@@ -137,7 +141,7 @@ def _analyze_vocabulary(text: str) -> float:
     # Count words with special prefixes/suffixes (indicating derived words, higher sophistication)
     # Common Sinhala prefixes: අ-, නැ-, නොවා-, ප්‍රධාන-
     # Common Sinhala suffixes: -කරු, -කරණ, -වන, -නම්, -ගේ
-    sophisticated_patterns = len(re.findall(r'(කරු|කරණ|වන|නම්|ගේ|හා|ලා)', text))
+    sophisticated_patterns = len(re.findall(r'(කරු|කරණ|වන|නම්|ගේ|හා|ලා|ම|ය|ක)', text))
     
     # Rare/complex characters (not commonly used in lower grades)
     complex_chars = len(re.findall(r'[^\u0D80-\u0DF0a-zA-Z0-9 ।,\.!?\-()]', text))
@@ -145,27 +149,27 @@ def _analyze_vocabulary(text: str) -> float:
     sophistication_score = sophisticated_patterns + (complex_chars * 0.1)
     
     # Map features to grade scale
-    # Grade 3: avg 3-5 chars/word, 0-5 sophisticated patterns
-    # Grade 5: avg 5-7 chars/word, 5-15 sophisticated patterns
-    # Grade 8: avg 7+ chars/word, 15+ sophisticated patterns
+    # Grade 3: avg 3-4 chars/word, 0-5 sophisticated patterns
+    # Grade 4-5: avg 4-5 chars/word, 5-20 sophisticated patterns
+    # Grade 6+: avg 5+ chars/word, 20+ sophisticated patterns
     
-    if avg_word_length < 4:
+    if avg_word_length < 3.5:
         base_score = 3.0
-    elif avg_word_length < 5:
+    elif avg_word_length < 4.5:
         base_score = 4.0
-    elif avg_word_length < 6:
+    elif avg_word_length < 5.5:
         base_score = 5.0
-    elif avg_word_length < 7:
+    elif avg_word_length < 6.5:
         base_score = 6.0
     else:
         base_score = 7.0
     
     # Adjust based on sophistication
-    if sophistication_score < 3:
+    if sophistication_score < 5:
         vocab_score = base_score - 0.5
-    elif sophistication_score < 10:
-        vocab_score = base_score
-    elif sophistication_score < 20:
+    elif sophistication_score < 15:
+        vocab_score = base_score + 0.2
+    elif sophistication_score < 25:
         vocab_score = base_score + 0.5
     else:
         vocab_score = base_score + 1.0
