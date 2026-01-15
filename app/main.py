@@ -22,6 +22,7 @@ app.add_middleware(
     allow_origins=[
         "*",
         "https://akura.vercel.app",
+        "https://akura-qa.vercel.app",
         "http://localhost:3000",
         "http://localhost:5173",
     ],
