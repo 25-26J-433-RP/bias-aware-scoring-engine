@@ -5,7 +5,7 @@ import torch
 from transformers import AutoTokenizer
 from .model_multitask_xlmr import SinhalaMultiHeadRegressor
 
-MODEL_SOURCE = "models/xlm-roberta-large-sinhala-multihead"
+MODEL_SOURCE = "akura-official/xlm-roberta-large-sinhala-multihead"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # 🔹 Detect CI / test environment
