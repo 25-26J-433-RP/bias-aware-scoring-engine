@@ -11,17 +11,40 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # 🔹 Detect CI / test environment
 IS_TEST = os.getenv("DISABLE_ML", "0") == "1"
 
-if not IS_TEST:
-    tokenizer = AutoTokenizer.from_pretrained(
-        MODEL_SOURCE,
-        use_fast=False,
-        trust_remote_code=True
-    )
+# Load model with retry logic and error handling
+tokenizer = None
+model = None
 
-    model = SinhalaMultiHeadRegressor.from_pretrained(
-        MODEL_SOURCE,
-        trust_remote_code=True
-    )
+if not IS_TEST:
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(
+            MODEL_SOURCE,
+            use_fast=False,
+            trust_remote_code=True,
+            local_files_only=True  # Use cached files only during startup
+        )
+
+        model = SinhalaMultiHeadRegressor.from_pretrained(
+            MODEL_SOURCE,
+            trust_remote_code=True,
+            local_files_only=True  # Use cached files only during startup
+        )
+    except Exception as e:
+        print(f"Warning: Could not load model from cache: {e}")
+        print("Attempting to download model from HuggingFace...")
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(
+                MODEL_SOURCE,
+                use_fast=False,
+                trust_remote_code=True
+            )
+            model = SinhalaMultiHeadRegressor.from_pretrained(
+                MODEL_SOURCE,
+                trust_remote_code=True
+            )
+        except Exception as e2:
+            print(f"Error: Failed to load model: {e2}")
+            raise
 
     model.to(DEVICE)
     model.eval()
