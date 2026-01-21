@@ -92,7 +92,7 @@ def score_sinhala_ml(payload: SinhalaEssayIn):
         "details": {
             "dyslexic_flag": payload.dyslexic_flag,
             "error_tags": payload.error_tags,
-            "model": "xlm-roberta-large-sinhala-multihead",
+            "model": "✅ RETRAINED MODEL (Cloud)",
             "detected_grade": detected_grade,
             "grade_auto_detected": payload.grade is None
         },
