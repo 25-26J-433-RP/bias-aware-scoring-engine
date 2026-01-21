@@ -97,7 +97,45 @@ def _get_grade_adjustment_factor(grade: int, text_length: int) -> float:
     return multiplier
 
 
-def score_sinhala_ml_v2(text: str, grade: int) -> dict:
+
+from .mitigation import mitigator
+
+def apply_fairness_mitigation(score_dict: dict, dyslexic_flag: bool) -> dict:
+    """
+    Apply fairness mitigation logic using the Calibrated Post-Processing mitigator.
+    """
+    if not dyslexic_flag:
+        return score_dict
+
+    # 1. Provide a transparency report string
+    mitigation_note = "AIF360-Simulated: Calibrated EqOdds Applied"
+
+    # 2. Adjust the TOTAL score first
+    original_total = score_dict.get('total_14', 0)
+    # Convert 14-scale to 100-scale for the mitigator, then back
+    raw_100_scale = (original_total / 14.0) * 100
+    
+    adjusted_100_scale = mitigator.transform(raw_100_scale, dyslexic_flag)
+    
+    # Convert back to 14-scale
+    final_total_14 = (adjusted_100_scale / 100.0) * 14.0
+
+    # 3. Proportally adjust sub-metrics (Richness, Org, Tech) to match the new Total
+    # This ensures internal consistency of the scorecard
+    ratio = final_total_14 / original_total if original_total > 0 else 1.0
+
+    score_dict['richness_5'] = round(score_dict.get('richness_5', 0) * ratio, 2)
+    score_dict['organization_6'] = round(score_dict.get('organization_6', 0) * ratio, 2)
+    score_dict['technical_3'] = round(score_dict.get('technical_3', 0) * ratio, 2)
+    score_dict['total_14'] = round(final_total_14, 2)
+    
+    # 4. Inject metadata for the frontend to display
+    score_dict['mitigation_info'] = mitigation_note
+        
+    return score_dict
+
+
+def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False) -> dict:
     # 🔹 CI-safe dummy output (no ML load)
     if model is None:
         # Apply grade adjustment even to dummy output
@@ -109,12 +147,13 @@ def score_sinhala_ml_v2(text: str, grade: int) -> dict:
         base_technical = 2.0
         base_total = 8.5
         
-        return {
+        scores = {
             "richness_5": round(base_richness * adjustment, 2),
             "organization_6": round(base_organization * adjustment, 2),
             "technical_3": round(base_technical * adjustment, 2),
             "total_14": round(base_total * adjustment, 2),
         }
+        return apply_fairness_mitigation(scores, dyslexic_flag)
 
     enc = tokenizer(
         text,
@@ -145,9 +184,11 @@ def score_sinhala_ml_v2(text: str, grade: int) -> dict:
     technical_adjusted = float(outputs["technical_3"]) * adjustment_factor
     total_adjusted = float(outputs["total_14"]) * adjustment_factor
 
-    return {
+    scores = {
         "richness_5": round(richness_adjusted, 2),
         "organization_6": round(organization_adjusted, 2),
         "technical_3": round(technical_adjusted, 2),
         "total_14": round(total_adjusted, 2),
     }
+
+    return apply_fairness_mitigation(scores, dyslexic_flag)
