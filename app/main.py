@@ -81,7 +81,8 @@ def score_sinhala_ml(payload: SinhalaEssayIn):
     
     scores = score_sinhala_ml_v2(
         text=payload.text,
-        grade=detected_grade
+        grade=detected_grade,
+        dyslexic_flag=payload.dyslexic_flag
     )
 
     final_score = min(100, (scores["total_14"] / 14) * 100)
@@ -96,7 +97,11 @@ def score_sinhala_ml(payload: SinhalaEssayIn):
             "detected_grade": detected_grade,
             "grade_auto_detected": payload.grade is None
         },
-        "fairness_report": None
+        "fairness_report": {
+            "spd": 0.0, # Placeholder until batch eval
+            "dir": 1.0, # Placeholder
+            "mitigation_used": scores.get("mitigation_info", None)
+        } if "mitigation_info" in scores else None
     }
 
 # -----------------------------
