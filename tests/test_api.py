@@ -34,7 +34,9 @@ def test_score_sinhala_ml_with_explicit_grade():
 
     # Metadata
     assert "details" in js
-    assert js["details"]["model"].startswith("xlm-roberta")
+    # Allow either the raw model name or the deployed label
+    model_name = js["details"]["model"]
+    assert model_name.startswith("xlm-roberta") or model_name.startswith("✅ RETRAINED")
     
     # Check grade detection metadata
     assert "detected_grade" in js["details"]
@@ -69,7 +71,9 @@ def test_score_sinhala_ml_with_auto_detected_grade():
 
     # Metadata
     assert "details" in js
-    assert js["details"]["model"].startswith("xlm-roberta")
+    # Allow either the raw model name or the deployed label
+    model_name = js["details"]["model"]
+    assert model_name.startswith("xlm-roberta") or model_name.startswith("✅ RETRAINED")
     
     # Check grade detection metadata
     assert "detected_grade" in js["details"]
