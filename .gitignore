@@ -19,6 +19,12 @@ env/
 # logs & temp
 *.log
 *.tmp
+*_output.txt
+*_debug.txt
+*_log.txt
+eval_*.txt
+fairness_output.txt
+grade*_report.json
 
 # data/models (keep out of repo; use LFS later if needed)
 models/
