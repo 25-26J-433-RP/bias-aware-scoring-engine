@@ -32,8 +32,9 @@ COPY pytest.ini /app/
 
 # Pre-download Hugging Face model and tokenizer to avoid runtime download/rate limits
 # Use TRANSFORMERS_CACHE env var to ensure it persists
-RUN HF_HOME=/app/hf_cache TRANSFORMERS_CACHE=/app/hf_cache python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('akura-official/xlm-roberta-large-sinhala-multihead')"
-RUN HF_HOME=/app/hf_cache TRANSFORMERS_CACHE=/app/hf_cache python -c "from app.model_multitask_xlmr import SinhalaMultiHeadRegressor; SinhalaMultiHeadRegressor.from_pretrained('akura-official/xlm-roberta-large-sinhala-multihead')"
+# Note: This step is optional - if it fails, the model will be downloaded on first run
+RUN HF_HOME=/app/hf_cache TRANSFORMERS_CACHE=/app/hf_cache python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('akura-official/xlm-roberta-large-sinhala-multihead')" || echo "Tokenizer pre-download failed, will download at runtime"
+RUN HF_HOME=/app/hf_cache TRANSFORMERS_CACHE=/app/hf_cache python -c "from app.model_multitask_xlmr import SinhalaMultiHeadRegressor; SinhalaMultiHeadRegressor.from_pretrained('akura-official/xlm-roberta-large-sinhala-multihead', trust_remote_code=True)" || echo "Model pre-download failed, will download at runtime"
 
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8004}"]
 
