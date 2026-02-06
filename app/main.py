@@ -134,9 +134,12 @@ import uvicorn
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
+    # Use 0.0.0.0 only in production (Cloud Run/Docker) for container networking
+    # Default to 127.0.0.1 for local development (more secure)
+    host = os.environ.get("HOST", "127.0.0.1")
     uvicorn.run(
         app,
-        host="0.0.0.0",
+        host=host,  # noqa: S104 - Required for Cloud Run deployment
         port=port,
         log_level="info"
     )
