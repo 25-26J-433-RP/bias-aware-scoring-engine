@@ -195,8 +195,9 @@ def test_mitigation():
     for grade_key, info in status.items():
         grade = grade_key.replace("grade_", "")
         active = "ACTIVE" if info["mitigation_active"] else "INACTIVE"
-        offset = info["calibration_offset"]
-        print(f"   Grade {grade}: {active} (offset: {offset:+.2f})")
+        multiplier = info["calibration_multiplier"]
+        boost_pct = (multiplier - 1.0) * 100 if multiplier > 1.0 else 0.0
+        print(f"   Grade {grade}: {active} (multiplier: x{multiplier:.3f}, +{boost_pct:.1f}%)")
 
 
 if __name__ == "__main__":
