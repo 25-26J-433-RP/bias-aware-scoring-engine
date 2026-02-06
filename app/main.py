@@ -19,17 +19,18 @@ app = FastAPI(title="Bias-Aware Sinhala Essay Grader", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "*",
-        "https://akura.vercel.app",
-        "https://akura-qa.vercel.app",
-        "http://localhost:3000",
-        "http://localhost:5173",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    print(f"[DEBUG] Incoming request: {request.method} {request.url}")
+    response = await call_next(request)
+    print(f"[DEBUG] Request completed: {request.method} {request.url} -> {response.status_code}")
+    return response
 
 
 # -----------------------------
@@ -73,6 +74,7 @@ def score_sinhala(payload: SinhalaEssayIn):
 # -----------------------------
 @app.post("/score-sinhala-ml", response_model=SinhalaMLOut)
 def score_sinhala_ml(payload: SinhalaEssayIn):
+    print(f"--- [REQUEST] Scoring Sinhala Essay (Grade {payload.grade}) ---")
     # Detect or use provided grade
     detected_grade = infer_grade_from_text(payload.text, payload.grade)
     
@@ -98,8 +100,8 @@ def score_sinhala_ml(payload: SinhalaEssayIn):
             "grade_auto_detected": payload.grade is None
         },
         "fairness_report": {
-            "spd": 0.0, # Placeholder until batch eval
-            "dir": 1.0, # Placeholder
+            "spd": scores.get("mitigation_info", {}).get("fairness_metrics", {}).get("spd", 0.0) if "mitigation_info" in scores else 0.0,
+            "dir": scores.get("mitigation_info", {}).get("fairness_metrics", {}).get("dir", 1.0) if "mitigation_info" in scores else 1.0,
             "mitigation_used": scores.get("mitigation_info", None)
         } if "mitigation_info" in scores else None
     }

@@ -82,6 +82,12 @@ def store_fairness_report(report: dict):
         "protected_attribute": "dyslexic_flag",
         "threshold": report["threshold"],
         "sample_size": report["sample_size"],
+        "mean_dyslexic": report.get("mean_dyslexic", 0.0),
+        "mean_non_dyslexic": report.get("mean_non_dyslexic", 0.0),
+        "n_dyslexic": report.get("n_dyslexic", 0),
+        "n_non_dyslexic": report.get("n_non_dyslexic", 0),
+        "calibration_offset": report.get("calibration_offset", 0.0),
+        "calibration_multiplier": report.get("calibration_multiplier", 1.0),
         "evaluated_at": firestore.SERVER_TIMESTAMP,
         "data_source": "Firestore:userImages",
         "notes": "Only successfully scored essays included"
@@ -92,20 +98,33 @@ def store_fairness_report(report: dict):
 # 4. Run grade-wise fairness evaluation
 # -----------------------------
 def run_fairness_eval():
-    print("\n📊 GRADE-WISE FAIRNESS EVALUATION (Grades 3–8)")
+    print("\nGRADE-WISE FAIRNESS EVALUATION (Grades 3-8)")
     print("------------------------------------------------")
 
     for grade in range(3, 9):  # Grades 3 to 8
         df = fetch_user_images(grade_filter=grade)
 
         if df.empty:
-            print(f"\n⚠️ No data available for Grade {grade}")
+            print(f"\n No data available for Grade {grade}")
             continue
 
         scores = df["score"].tolist()
         groups = df["dyslexic_flag"].tolist()
 
         y_hat = binarize(scores, cutoff=75)
+        
+        # Calculate mean scores per group (needed for calibration)
+        dyslexic_scores = df[df["dyslexic_flag"] == True]["score"]
+        non_dyslexic_scores = df[df["dyslexic_flag"] == False]["score"]
+        
+        mean_dyslexic = float(dyslexic_scores.mean()) if len(dyslexic_scores) > 0 else 0.0
+        mean_non_dyslexic = float(non_dyslexic_scores.mean()) if len(non_dyslexic_scores) > 0 else 0.0
+        
+        # Calculate calibration for mitigation
+        calibration_offset = mean_non_dyslexic - mean_dyslexic
+        # Multiplier logic: protects against inflating short essays
+        mean_d_safe = max(1.0, mean_dyslexic)
+        calibration_multiplier = mean_non_dyslexic / mean_d_safe
 
         report = {
             "grade": grade,
@@ -113,15 +132,36 @@ def run_fairness_eval():
             "dir": round(dir_ratio(y_hat, groups), 3),
             "threshold": 75,
             "sample_size": len(df),
+            # New fields for conditional mitigation
+            "mean_dyslexic": round(mean_dyslexic, 2),
+            "mean_non_dyslexic": round(mean_non_dyslexic, 2),
+            "n_dyslexic": len(dyslexic_scores),
+            "n_non_dyslexic": len(non_dyslexic_scores),
+            "calibration_offset": round(calibration_offset, 2),
+            "calibration_multiplier": round(calibration_multiplier, 3),
         }
 
-        print(f"\n📌 Grade {grade}")
+        print(f"\nGrade {grade}")
         for k, v in report.items():
-            print(f"{k}: {v}")
+            print(f"   {k}: {v}")
+        
+        # Check if mitigation would be triggered (ONLY for unfavorable bias)
+        # Unfavorable = dyslexic students scoring LOWER
+        spd_unfavorable = report["spd"] < -0.1  # Negative SPD = dyslexic disadvantaged
+        dir_unfavorable = report["dir"] < 0.8   # DIR < 0.8 = dyslexic disadvantaged
+        
+        if spd_unfavorable or dir_unfavorable:
+            print(f"   UNFAVORABLE BIAS DETECTED - Dyslexic students scoring lower")
+            print(f"      Mitigation will apply Proportional Boost: x{report['calibration_multiplier']:.3f}")
+        elif report["dir"] > 1.25:
+            print(f"   Favorable bias detected (dyslexic scoring higher) - NO mitigation applied")
+            print(f"      Dyslexic students will be scored like normal students.")
+        else:
+            print(f"   No significant bias - Dyslexic students scored like normal students")
 
         store_fairness_report(report)
 
-    print("\n✅ Fairness evaluation completed for all grades.")
+    print("\nFairness evaluation completed for all grades.")
 
 
 # -----------------------------

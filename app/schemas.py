@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Any
 
 
 # -----------------------------
@@ -14,7 +14,7 @@ class FairnessReport(BaseModel):
     spd: float
     dir: float
     eod: Optional[float] = None
-    mitigation_used: Optional[str] = None
+    mitigation_used: Optional[Any] = None
 
 
 class ScoreOut(BaseModel):

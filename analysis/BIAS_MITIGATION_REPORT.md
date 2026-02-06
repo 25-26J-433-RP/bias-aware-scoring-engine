@@ -29,14 +29,30 @@ To address potential biases, we adopted a "Data Augmentation" strategy rather th
    - Fine-tuned the `xlm-roberta-large-sinhala-multihead` model on this combined dataset.
    - Objective: Teach the model to be robust to surface-level noise and validation of semantic content over orthographic perfection.
 
-## 4. Mitigation Logic (Integration Phase)
-We have prepared the integration pipeline to include a "Safety Valve" post-processing step using IBM AIF360 concepts.
+## 4. Mitigation Logic (Implemented Strategy)
+The system currently implements a **Hybrid Pre-Processing + Conditional Post-Processing** strategy, specifically tailored for the high-stakes educational domain.
 
-- **Hook Implemented:** `apply_fairness_mitigation(score, flag)` in `sinhala_ml_v2.py`.
-- **Trigger:** The system now accepts a `dyslexic_flag` from the upstream Classifier component.
-- **Logic:** Currently in "Shadow Mode" (logging only). Future logic will apply re-weighing calibration if the fairness violation exceeds a threshold (e.g., SPD > 0.1).
+- **Pre-Processing (Linguistic):** Instead of mathematical transformations, the system uses a **Sentence Reconstruction** layer (Member 2's component) to fix orthographic and grammatical dyslexic errors before scoring.
+- **Post-Processing (Calibrated):** The `ConditionalFairnessMitigator` in `app/mitigation.py` applies a grade-aware adjustment ONLY when unfavorable bias is statistically detected (|SPD| > 0.1 or DIR < 0.8).
+- **Log:** All adjustments are logged via `MitigationRecord` objects to ensure full auditability for researchers and educators.
 
-## 5. Next Steps
-- Validate the "Mock" contract with the Pattern Classifier team.
-- Run full evaluation on the "Gold Standard" annotated dyslexic essay set once available.
-- Finalize the re-weighing parameter in `apply_fairness_mitigation`.
+## 5. Research Rationale: Comparative Analysis of AIF360 Strategies
+In the development of the Bias-Aware Scoring Engine, several common AIF360 mitigation strategies were evaluated. Below is the justification for why certain methods were rejected in favor of our hybrid approach.
+
+| Method | Status | Research Justification for Rejection |
+| :--- | :--- | :--- |
+| **Statistical Pre-processing (DIR)** | Rejected | Black-box mathematical transformations destroy the linguistic signal. In an educational context, preserving the original errors is necessary for pedagogical feedback. |
+| **In-Processing (Reweighing)** | Future Work | Requires instance weights during retraining. Rejected for the initial phase due to high computational overhead and the risk of overfitting to synthetic data patterns. |
+| **Adversarial Debiasing** | Concept Only | Requires architectural changes to the Transformer-based model (GAN approach). Rejected due to complexity for the Sinhala language and limited real-world dyslexic data. |
+| **Conditional Calibration (Implementation)** | **Chosen** | **Merit-Preserving:** Allows the model to grade naturally. Only intervenes when systemic disparity is measured. Minimizes "False Positive" fairness boosts. |
+
+### Why This Hybrid Strategy?
+1. **Explainability:** We can show the "Before/After" of both the sentence reconstruction and the score calibration.
+2. **Pedagogical Validity:** Unlike adversarial debiasing, our method does not "blind" the model to errors; it simply corrects the *penalty* associated with those errors.
+3. **Modularity:** The scoring engine remains stable (post-processing) while linguistic improvements can be made separately in the reconstruction module.
+
+## 6. Next Steps
+- Clear the legacy "contaminated" data in Firebase (affected by old naive boosting).
+- Re-run the batch fairness evaluation (`firestore_fairness_eval.py`) to establish a clean baseline.
+- Monitor the Disparate Impact Ratio (DIR) in the Dashboard during live testing.
+- Document the impact of "Unfavorable-Only" mitigation on overall group parity.

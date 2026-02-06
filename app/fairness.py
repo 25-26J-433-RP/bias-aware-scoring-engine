@@ -23,16 +23,18 @@ def _rate(mask: np.ndarray, positives: np.ndarray) -> float:
 def spd(y_hat_bin: Iterable[int], groups: Iterable[bool]) -> float:
     yb = _to_np(y_hat_bin).astype(int)
     g = _to_np(groups).astype(bool)
-    return _rate(~g, yb) - _rate(g, yb)
+    # Rate(Dyslexic) - Rate(Non-Dyslexic)
+    return _rate(g, yb) - _rate(~g, yb)
 
 
 def dir_ratio(y_hat_bin: Iterable[int], groups: Iterable[bool]) -> float:
     yb = _to_np(y_hat_bin).astype(int)
     g = _to_np(groups).astype(bool)
-    rate_a, rate_b = _rate(~g, yb), _rate(g, yb)
+    rate_privileged = _rate(~g, yb)
+    rate_unprivileged = _rate(g, yb)
 
-    # SAFE FIX — prevent infinity
-    return float(rate_a / rate_b) if rate_b > 0 else 1.0
+    # Standard DIR: Rate(Unprivileged) / Rate(Privileged)
+    return float(rate_unprivileged / rate_privileged) if rate_privileged > 0 else 1.0
 
 
 def eod(y_hat_bin: Iterable[int], y_true: Iterable[int], groups: Iterable[bool]) -> float:
