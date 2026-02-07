@@ -260,6 +260,7 @@ class ConditionalFairnessMitigator:
         # First check if Firebase already calculated the multiplier
         if hasattr(metrics, 'calibration_multiplier') and metrics.calibration_multiplier and metrics.calibration_multiplier > 1.0:
             bounded_multiplier = min(metrics.calibration_multiplier, self.MAX_MULTIPLIER)
+            print(f"             Using Firebase calibration_multiplier: {bounded_multiplier:.3f}")
         else:
             # Calculate from means - use a safety floor to avoid DivisionByZero
             mean_d = max(1.0, metrics.mean_dyslexic)

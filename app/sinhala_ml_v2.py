@@ -158,6 +158,7 @@ def apply_fairness_mitigation(score_dict: dict, dyslexic_flag: bool, grade: int)
     
     # Add detailed record if mitigation was applied
     if mitigation_record:
+
         score_dict['fairness_report']['details'] = {
             "spd_violated": mitigation_record.spd_threshold_violated,
             "dir_violated": mitigation_record.dir_threshold_violated,
@@ -227,3 +228,8 @@ def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False) -> d
     }
 
     return apply_fairness_mitigation(scores, dyslexic_flag, grade)
+
+def load_model():
+    """Compatibility loader for main.py startup"""
+    print("[SINHALA-ML] Model loader called (running in CI/Local mode)")
+    return True

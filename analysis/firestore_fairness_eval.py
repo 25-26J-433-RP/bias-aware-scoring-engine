@@ -82,6 +82,13 @@ def store_fairness_report(report: dict):
         "protected_attribute": "dyslexic_flag",
         "threshold": report["threshold"],
         "sample_size": report["sample_size"],
+        # Research-level calibration data
+        "n_dyslexic": report.get("n_dyslexic", 0),
+        "n_non_dyslexic": report.get("n_non_dyslexic", 0),
+        "mean_dyslexic": report.get("mean_dyslexic", 0.0),
+        "mean_non_dyslexic": report.get("mean_non_dyslexic", 0.0),
+        "calibration_multiplier": report.get("calibration_multiplier", 1.0),
+        # Metadata
         "evaluated_at": firestore.SERVER_TIMESTAMP,
         "data_source": "Firestore:userImages",
         "notes": "Only successfully scored essays included"
@@ -107,12 +114,32 @@ def run_fairness_eval():
 
         y_hat = binarize(scores, cutoff=75)
 
+        # Calculate group-wise statistics for calibration
+        dyslexic_scores = df[df["dyslexic_flag"] == True]["score"].tolist()
+        non_dyslexic_scores = df[df["dyslexic_flag"] == False]["score"].tolist()
+        
+        mean_dyslexic = round(sum(dyslexic_scores) / len(dyslexic_scores), 3) if dyslexic_scores else 0.0
+        mean_non_dyslexic = round(sum(non_dyslexic_scores) / len(non_dyslexic_scores), 3) if non_dyslexic_scores else 0.0
+        
+        # Calculate calibration multiplier (for proportional post-processing)
+        # Formula: multiplier = mean_non_dyslexic / mean_dyslexic
+        # This ensures dyslexic scores are scaled to match non-dyslexic distribution
+        if mean_dyslexic > 0 and mean_non_dyslexic > 0:
+            calibration_multiplier = round(mean_non_dyslexic / mean_dyslexic, 4)
+        else:
+            calibration_multiplier = 1.0
+
         report = {
             "grade": grade,
             "spd": round(spd(y_hat, groups), 3),
             "dir": round(dir_ratio(y_hat, groups), 3),
             "threshold": 75,
             "sample_size": len(df),
+            "n_dyslexic": len(dyslexic_scores),
+            "n_non_dyslexic": len(non_dyslexic_scores),
+            "mean_dyslexic": mean_dyslexic,
+            "mean_non_dyslexic": mean_non_dyslexic,
+            "calibration_multiplier": calibration_multiplier,
         }
 
         print(f"\n📌 Grade {grade}")
