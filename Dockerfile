@@ -20,8 +20,8 @@ RUN python -m pip install --upgrade pip setuptools wheel
 
 # Install Python dependencies from pyproject (explicit install to avoid build-system complexity)
 # Use --no-cache-dir to keep the image small and prefer binary wheels when available.
-RUN pip install --no-cache-dir --prefer-binary fastapi "uvicorn[standard]" pydantic numpy scikit-learn transformers sentencepiece protobuf \
-    && pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir --prefer-binary fastapi "uvicorn[standard]" pydantic numpy scikit-learn transformers==4.36.2 sentencepiece protobuf \
+    && pip install --no-cache-dir torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
 
 COPY app/ /app/app/
 COPY pyproject.toml /app/

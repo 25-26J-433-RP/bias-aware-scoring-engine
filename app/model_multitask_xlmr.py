@@ -21,9 +21,7 @@ class SinhalaMultiHeadRegressor(PreTrainedModel):
         self.technical = nn.Linear(hidden, 1)
         self.total = nn.Linear(hidden, 1)
 
-    @property
-    def all_tied_weights_keys(self):
-        return {}
+
 
     def forward(self, input_ids, attention_mask, grade_id):
         out = self.encoder(
