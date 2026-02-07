@@ -15,50 +15,43 @@ IS_TEST = os.getenv("DISABLE_ML", "0") == "1"
 tokenizer = None
 model = None
 
-def load_model():
-    global tokenizer, model
-    if model is not None:
-        return
+if not IS_TEST:
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(
+            MODEL_SOURCE,
+            use_fast=False,
+            trust_remote_code=True,
+            local_files_only=True  # Use cached files only during startup
+        )
 
-    if not IS_TEST:
+        model = SinhalaMultiHeadRegressor.from_pretrained(
+            MODEL_SOURCE,
+            trust_remote_code=True,
+            local_files_only=True  # Use cached files only during startup
+        )
+    except Exception as e:
+        print(f"Warning: Could not load model from cache: {e}")
+        print("Attempting to download model from HuggingFace...")
         try:
-            print(f"Loading tokenizer and model from {MODEL_SOURCE}...")
             tokenizer = AutoTokenizer.from_pretrained(
                 MODEL_SOURCE,
                 use_fast=False,
-                trust_remote_code=True,
-                local_files_only=True  # Use cached files only during startup
+                trust_remote_code=True
             )
-
             model = SinhalaMultiHeadRegressor.from_pretrained(
                 MODEL_SOURCE,
-                trust_remote_code=True,
-                local_files_only=True  # Use cached files only during startup
+                trust_remote_code=True
             )
-        except Exception as e:
-            print(f"Warning: Could not load model from cache: {e}")
-            print("Attempting to download model from HuggingFace...")
-            try:
-                tokenizer = AutoTokenizer.from_pretrained(
-                    MODEL_SOURCE,
-                    use_fast=False,
-                    trust_remote_code=True
-                )
-                model = SinhalaMultiHeadRegressor.from_pretrained(
-                    MODEL_SOURCE,
-                    trust_remote_code=True
-                )
-            except Exception as e2:
-                print(f"Error: Failed to load model: {e2}")
-                raise
+        except Exception as e2:
+            print(f"Error: Failed to load model: {e2}")
+            raise
 
-        model.to(DEVICE)
-        model.eval()
-        print("Model loaded successfully.")
-    else:
-        # CI-safe placeholders
-        tokenizer = None
-        model = None
+    model.to(DEVICE)
+    model.eval()
+else:
+    # CI-safe placeholders
+    tokenizer = None
+    model = None
 
 
 def _get_grade_adjustment_factor(grade: int, text_length: int) -> float:
@@ -107,37 +100,72 @@ def _get_grade_adjustment_factor(grade: int, text_length: int) -> float:
 
 from .mitigation import mitigator
 
-def apply_fairness_mitigation(score_dict: dict, dyslexic_flag: bool) -> dict:
+def apply_fairness_mitigation(score_dict: dict, dyslexic_flag: bool, grade: int) -> dict:
     """
-    Apply fairness mitigation logic using the Calibrated Post-Processing mitigator.
+    Apply CONDITIONAL fairness mitigation using post-processing calibration.
+    
+    Specification Compliance:
+    - Mitigation triggered ONLY when thresholds violated (|SPD| > 0.1 or DIR < 0.8)
+    - Grade-aware calibrated adjustment
+    - Non-dyslexic scores: UNCHANGED
+    - Dyslexic scores: Conditionally adjusted based on measured bias
+    - Full transparency: Original score, adjusted score, metrics logged
+    
+    Args:
+        score_dict: Dictionary with rubric scores (richness_5, organization_6, etc.)
+        dyslexic_flag: Whether the student is dyslexic
+        grade: Student's grade level (3-8) for grade-specific calibration
+        
+    Returns:
+        Score dictionary with potential fairness adjustment and transparency info
     """
-    if not dyslexic_flag:
-        return score_dict
-
-    # 1. Provide a transparency report string
-    mitigation_note = "AIF360-Simulated: Calibrated EqOdds Applied"
-
-    # 2. Adjust the TOTAL score first
+    # Convert to 100-scale for the mitigator
     original_total = score_dict.get('total_14', 0)
-    # Convert 14-scale to 100-scale for the mitigator, then back
     raw_100_scale = (original_total / 14.0) * 100
     
-    adjusted_100_scale = mitigator.transform(raw_100_scale, dyslexic_flag)
+    # Apply conditional mitigation (only adjusts if thresholds violated)
+    adjusted_100_scale, mitigation_record = mitigator.transform(
+        raw_score=raw_100_scale,
+        dyslexic_flag=dyslexic_flag,
+        grade=grade
+    )
     
-    # Convert back to 14-scale
-    final_total_14 = (adjusted_100_scale / 100.0) * 14.0
-
-    # 3. Proportally adjust sub-metrics (Richness, Org, Tech) to match the new Total
-    # This ensures internal consistency of the scorecard
-    ratio = final_total_14 / original_total if original_total > 0 else 1.0
-
-    score_dict['richness_5'] = round(score_dict.get('richness_5', 0) * ratio, 2)
-    score_dict['organization_6'] = round(score_dict.get('organization_6', 0) * ratio, 2)
-    score_dict['technical_3'] = round(score_dict.get('technical_3', 0) * ratio, 2)
-    score_dict['total_14'] = round(final_total_14, 2)
+    # Check if adjustment was made
+    adjustment_applied = mitigation_record is not None
     
-    # 4. Inject metadata for the frontend to display
-    score_dict['mitigation_info'] = mitigation_note
+    if adjustment_applied:
+        # Convert back to 14-scale
+        final_total_14 = (adjusted_100_scale / 100.0) * 14.0
+        
+        # Proportionally adjust sub-metrics to maintain rubric consistency
+        ratio = final_total_14 / original_total if original_total > 0 else 1.0
+        
+        score_dict['richness_5'] = round(score_dict.get('richness_5', 0) * ratio, 2)
+        score_dict['organization_6'] = round(score_dict.get('organization_6', 0) * ratio, 2)
+        score_dict['technical_3'] = round(score_dict.get('technical_3', 0) * ratio, 2)
+        score_dict['total_14'] = round(final_total_14, 2)
+    
+    # Add transparency information to response
+    score_dict['fairness_report'] = {
+        "mitigation_applied": adjustment_applied,
+        "original_score_100": round(raw_100_scale, 2),
+        "adjusted_score_100": round(adjusted_100_scale, 2) if adjustment_applied else None,
+        "protected_attribute": "dyslexic_flag",
+        "protected_value": dyslexic_flag,
+        "grade": grade,
+        "method": "Conditional Post-Processing (AIF360-aligned)" if adjustment_applied else None
+    }
+    
+    # Add detailed record if mitigation was applied
+    if mitigation_record:
+        score_dict['fairness_report']['details'] = {
+            "spd_violated": mitigation_record.spd_threshold_violated,
+            "dir_violated": mitigation_record.dir_threshold_violated,
+            "spd_value": mitigation_record.spd_value,
+            "dir_value": mitigation_record.dir_value,
+            "multiplier_applied": mitigation_record.multiplier_applied,
+            "absolute_boost": mitigation_record.absolute_boost
+        }
         
     return score_dict
 
@@ -160,7 +188,7 @@ def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False) -> d
             "technical_3": round(base_technical * adjustment, 2),
             "total_14": round(base_total * adjustment, 2),
         }
-        return apply_fairness_mitigation(scores, dyslexic_flag)
+        return apply_fairness_mitigation(scores, dyslexic_flag, grade)
 
     enc = tokenizer(
         text,
@@ -198,4 +226,4 @@ def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False) -> d
         "total_14": round(total_adjusted, 2),
     }
 
-    return apply_fairness_mitigation(scores, dyslexic_flag)
+    return apply_fairness_mitigation(scores, dyslexic_flag, grade)
