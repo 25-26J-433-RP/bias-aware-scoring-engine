@@ -2,8 +2,6 @@
 
 import os
 import torch
-from transformers import AutoTokenizer
-from .model_multitask_xlmr import SinhalaMultiHeadRegressor
 
 MODEL_SOURCE = "akura-official/xlm-roberta-large-sinhala-multihead"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -11,47 +9,51 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # 🔹 Detect CI / test environment
 IS_TEST = os.getenv("DISABLE_ML", "0") == "1"
 
-# Load model with retry logic and error handling
-tokenizer = None
-model = None
+# Lazy-loaded model and tokenizer (initialized on first use)
+_tokenizer = None
+_model = None
 
-if not IS_TEST:
+
+def load_model():
+    """
+    Lazy load both model and tokenizer on first use.
+    This ensures NO loading happens at import time.
+    """
+    global _model, _tokenizer
+    
+    if _model is not None:
+        return _model, _tokenizer
+    
+    if IS_TEST:
+        return None, None
+    
+    print("[SINHALA-ML] Loading model and tokenizer...")
+    
+    # Import inside function to avoid any import-time side effects
+    from transformers import AutoTokenizer
+    from .model_multitask_xlmr import SinhalaMultiHeadRegressor
+    
     try:
-        tokenizer = AutoTokenizer.from_pretrained(
+        _tokenizer = AutoTokenizer.from_pretrained(
             MODEL_SOURCE,
             use_fast=False,
-            trust_remote_code=True,
-            local_files_only=True  # Use cached files only during startup
+            trust_remote_code=True
         )
-
-        model = SinhalaMultiHeadRegressor.from_pretrained(
+        print("[SINHALA-ML] Tokenizer loaded.")
+        
+        _model = SinhalaMultiHeadRegressor.from_pretrained(
             MODEL_SOURCE,
-            trust_remote_code=True,
-            local_files_only=True  # Use cached files only during startup
+            trust_remote_code=True
         )
+        _model.to(DEVICE)
+        _model.eval()
+        print("[SINHALA-ML] Model loaded successfully.")
+        
     except Exception as e:
-        print(f"Warning: Could not load model from cache: {e}")
-        print("Attempting to download model from HuggingFace...")
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(
-                MODEL_SOURCE,
-                use_fast=False,
-                trust_remote_code=True
-            )
-            model = SinhalaMultiHeadRegressor.from_pretrained(
-                MODEL_SOURCE,
-                trust_remote_code=True
-            )
-        except Exception as e2:
-            print(f"Error: Failed to load model: {e2}")
-            raise
-
-    model.to(DEVICE)
-    model.eval()
-else:
-    # CI-safe placeholders
-    tokenizer = None
-    model = None
+        print(f"[SINHALA-ML] Error loading model: {e}")
+        raise
+    
+    return _model, _tokenizer
 
 
 def _get_grade_adjustment_factor(grade: int, text_length: int) -> float:
@@ -172,6 +174,9 @@ def apply_fairness_mitigation(score_dict: dict, dyslexic_flag: bool, grade: int)
 
 
 def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False) -> dict:
+    # Get lazy-loaded model and tokenizer (will be None in test mode)
+    model, tokenizer = load_model()
+    
     # 🔹 CI-safe dummy output (no ML load)
     if model is None:
         # Apply grade adjustment even to dummy output
@@ -190,6 +195,7 @@ def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False) -> d
             "total_14": round(base_total * adjustment, 2),
         }
         return apply_fairness_mitigation(scores, dyslexic_flag, grade)
+    
 
     enc = tokenizer(
         text,
@@ -228,8 +234,3 @@ def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False) -> d
     }
 
     return apply_fairness_mitigation(scores, dyslexic_flag, grade)
-
-def load_model():
-    """Compatibility loader for main.py startup"""
-    print("[SINHALA-ML] Model loader called (running in CI/Local mode)")
-    return True

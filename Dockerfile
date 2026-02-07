@@ -38,12 +38,4 @@ COPY README.md /app/
 COPY tests/ /app/tests/
 COPY pytest.ini /app/
 
-
-# Pre-download Hugging Face model and tokenizer to avoid runtime download/rate limits
-# Use TRANSFORMERS_CACHE env var to ensure it persists
-RUN python -c "from transformers import AutoTokenizer, AutoModel; \
-    model_id = 'akura-official/xlm-roberta-large-sinhala-multihead'; \
-    AutoTokenizer.from_pretrained(model_id); \
-    AutoModel.from_pretrained(model_id, trust_remote_code=True)"
-
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8004}"]
