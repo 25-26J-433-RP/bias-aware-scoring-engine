@@ -406,7 +406,18 @@ class ConditionalFairnessMitigator:
         """
         Load the latest fairness metrics from Firebase on startup.
         This ensures the mitigator is initialized with the calculated bias data.
+        
+        If Firebase credentials are not available (e.g., in Docker without the key file),
+        the mitigator will remain inactive and all scores will pass through unchanged.
         """
+        import os
+        
+        # Check if credentials file exists before attempting to load
+        if not os.path.exists("serviceAccountKey.json"):
+            print("[MITIGATION] serviceAccountKey.json not found - mitigation will remain inactive.")
+            print("[MITIGATION] This is expected in production Cloud Run (uses Workload Identity).")
+            return
+        
         try:
             import firebase_admin
             from firebase_admin import credentials, firestore
@@ -415,8 +426,12 @@ class ConditionalFairnessMitigator:
             try:
                 cred = credentials.Certificate("serviceAccountKey.json")
                 firebase_admin.initialize_app(cred)
-            except:
-                pass  # Already initialized
+            except ValueError:
+                # Already initialized
+                pass
+            except Exception as e:
+                print(f"[MITIGATION] Failed to initialize Firebase: {e}")
+                return
             
             db = firestore.client()
             
