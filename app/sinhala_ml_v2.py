@@ -15,43 +15,50 @@ IS_TEST = os.getenv("DISABLE_ML", "0") == "1"
 tokenizer = None
 model = None
 
-if not IS_TEST:
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(
-            MODEL_SOURCE,
-            use_fast=False,
-            trust_remote_code=True,
-            local_files_only=True  # Use cached files only during startup
-        )
+def load_model():
+    global tokenizer, model
+    if model is not None:
+        return
 
-        model = SinhalaMultiHeadRegressor.from_pretrained(
-            MODEL_SOURCE,
-            trust_remote_code=True,
-            local_files_only=True  # Use cached files only during startup
-        )
-    except Exception as e:
-        print(f"Warning: Could not load model from cache: {e}")
-        print("Attempting to download model from HuggingFace...")
+    if not IS_TEST:
         try:
+            print(f"Loading tokenizer and model from {MODEL_SOURCE}...")
             tokenizer = AutoTokenizer.from_pretrained(
                 MODEL_SOURCE,
                 use_fast=False,
-                trust_remote_code=True
+                trust_remote_code=True,
+                local_files_only=True  # Use cached files only during startup
             )
+
             model = SinhalaMultiHeadRegressor.from_pretrained(
                 MODEL_SOURCE,
-                trust_remote_code=True
+                trust_remote_code=True,
+                local_files_only=True  # Use cached files only during startup
             )
-        except Exception as e2:
-            print(f"Error: Failed to load model: {e2}")
-            raise
+        except Exception as e:
+            print(f"Warning: Could not load model from cache: {e}")
+            print("Attempting to download model from HuggingFace...")
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(
+                    MODEL_SOURCE,
+                    use_fast=False,
+                    trust_remote_code=True
+                )
+                model = SinhalaMultiHeadRegressor.from_pretrained(
+                    MODEL_SOURCE,
+                    trust_remote_code=True
+                )
+            except Exception as e2:
+                print(f"Error: Failed to load model: {e2}")
+                raise
 
-    model.to(DEVICE)
-    model.eval()
-else:
-    # CI-safe placeholders
-    tokenizer = None
-    model = None
+        model.to(DEVICE)
+        model.eval()
+        print("Model loaded successfully.")
+    else:
+        # CI-safe placeholders
+        tokenizer = None
+        model = None
 
 
 def _get_grade_adjustment_factor(grade: int, text_length: int) -> float:
