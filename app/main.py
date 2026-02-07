@@ -31,6 +31,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup_event():
+    print("Starting up...")
+    try:
+        load_model()
+    except Exception as e:
+        print(f"Startup error loading model: {e}")
+
+def load_model():
+    from .sinhala_ml_v2 import load_model as load_ml_model
+    load_ml_model()
+
 
 # -----------------------------
 # Health
