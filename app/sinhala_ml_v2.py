@@ -16,36 +16,15 @@ tokenizer = None
 model = None
 
 if not IS_TEST:
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(
-            MODEL_SOURCE,
-            use_fast=False,
-            trust_remote_code=True,
-            local_files_only=True  # Use cached files only during startup
-        )
-
-        model = SinhalaMultiHeadRegressor.from_pretrained(
-            MODEL_SOURCE,
-            trust_remote_code=True,
-            local_files_only=True  # Use cached files only during startup
-        )
-    except Exception as e:
-        print(f"Warning: Could not load model from cache: {e}")
-        print("Attempting to download model from HuggingFace...")
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(
-                MODEL_SOURCE,
-                use_fast=False,
-                trust_remote_code=True
-            )
-            model = SinhalaMultiHeadRegressor.from_pretrained(
-                MODEL_SOURCE,
-                trust_remote_code=True
-            )
-        except Exception as e2:
-            print(f"Error: Failed to load model: {e2}")
-            raise
-
+    tokenizer = AutoTokenizer.from_pretrained(
+        MODEL_SOURCE,
+        use_fast=False,
+        trust_remote_code=True
+    )
+    model = SinhalaMultiHeadRegressor.from_pretrained(
+        MODEL_SOURCE,
+        trust_remote_code=True
+    )
     model.to(DEVICE)
     model.eval()
 else:
