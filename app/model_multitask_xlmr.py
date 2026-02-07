@@ -4,6 +4,11 @@ from transformers import PreTrainedModel, AutoModel, AutoConfig
 
 class SinhalaMultiHeadRegressor(PreTrainedModel):
     config_class = AutoConfig
+    base_model_prefix = "xlm_roberta"
+    
+    # Prevent HuggingFace from trying to load/ignore certain keys
+    _keys_to_ignore_on_load_missing = []
+    _keys_to_ignore_on_load_unexpected = []
 
     def __init__(self, config):
         super().__init__(config)
@@ -11,7 +16,8 @@ class SinhalaMultiHeadRegressor(PreTrainedModel):
         self.encoder = AutoModel.from_config(config)
         hidden = config.hidden_size
 
-        # Patch for newer transformers versions (fixed for compatibility)
+        # Patch for newer transformers versions - both attributes must be dicts
+        self._tied_weights_keys = {}
         self.all_tied_weights_keys = {}
 
         # ---- Grade embedding ----
@@ -23,6 +29,10 @@ class SinhalaMultiHeadRegressor(PreTrainedModel):
         self.organization = nn.Linear(hidden, 1)
         self.technical = nn.Linear(hidden, 1)
         self.total = nn.Linear(hidden, 1)
+    
+    def tie_weights(self):
+        """Disable weight tying to prevent mark_tied_weights_as_initialized errors."""
+        return
 
     def forward(self, input_ids, attention_mask, grade_id):
         out = self.encoder(
