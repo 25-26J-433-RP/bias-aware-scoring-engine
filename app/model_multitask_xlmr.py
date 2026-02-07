@@ -11,8 +11,8 @@ class SinhalaMultiHeadRegressor(PreTrainedModel):
         self.encoder = AutoModel.from_config(config)
         hidden = config.hidden_size
 
-        # Patch for newer transformers versions
-        self.all_tied_weights_keys = []
+        # Patch for newer transformers versions (fixed for compatibility)
+        self.all_tied_weights_keys = {}
 
         # ---- Grade embedding ----
         self.grade_embed = nn.Embedding(10, hidden)
