@@ -23,7 +23,7 @@ def test_score_essay_contract_dyslexic_flag_true():
         "error_tags": ["mirror_writing", "phonetic_error"]
     }
     
-    response = client.post("/score-sinhala-ml", json=payload)
+    response = client.post("/score-sinhala-ml", json=payload, headers={"X-API-KEY": "akura-research-secret-2026"})
     
     # Assertions for Contract
     if response.status_code != 200:
@@ -55,7 +55,7 @@ def test_score_essay_contract_dyslexic_flag_false():
         "grade": 6,
         "dyslexic_flag": False
     }
-    response = client.post("/score-sinhala-ml", json=payload)
+    response = client.post("/score-sinhala-ml", json=payload, headers={"X-API-KEY": "akura-research-secret-2026"})
     
     assert response.status_code == 200
     data = response.json()
