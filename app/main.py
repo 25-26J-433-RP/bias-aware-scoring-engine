@@ -1,6 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
+import os
 
 from .schemas import (
     EssayIn, ScoreOut,
@@ -15,16 +16,33 @@ from .sinhala_ml_v2 import score_sinhala_ml_v2
 from .grade_detector import infer_grade_from_text
 from .fairness import spd, dir_ratio, eod, binarize
 
+# -----------------------------
+# Security Configuration
+# -----------------------------
+API_KEY_NAME = "X-API-KEY"
+# In production, this should be set in environment variables
+API_KEY_SECRET = os.getenv("INTERNAL_API_KEY", "akura-research-secret-2026")
+
+async def verify_api_key(x_api_key: str = Header(..., alias=API_KEY_NAME)):
+    if x_api_key != API_KEY_SECRET:
+        raise HTTPException(
+            status_code=403, 
+            detail="Forbidden: Invalid API Key. This endpoint is restricted."
+        )
+    return x_api_key
+
 app = FastAPI(title="Bias-Aware Sinhala Essay Grader", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "*",
         "https://akura.vercel.app",
         "https://akura-qa.vercel.app",
         "http://localhost:3000",
         "http://localhost:5173",
+        "http://localhost:8081",
+        "http://127.0.0.1:8081",
+        "http://localhost:8888",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -59,7 +77,7 @@ def score(payload: EssayIn):
 # -----------------------------
 # Sinhala Baseline Scoring
 # -----------------------------
-@app.post("/score-sinhala")
+@app.post("/score-sinhala", dependencies=[Depends(verify_api_key)])
 def score_sinhala(payload: SinhalaEssayIn):
     score, details = baseline_sinhala_score(payload.text)
     return {
@@ -74,7 +92,7 @@ def score_sinhala(payload: SinhalaEssayIn):
 # Sinhala ML Scoring (MAIN)
 # Grade-aware: Automatically detects grade if not provided
 # -----------------------------
-@app.post("/score-sinhala-ml", response_model=SinhalaMLOut)
+@app.post("/score-sinhala-ml", response_model=SinhalaMLOut, dependencies=[Depends(verify_api_key)])
 def score_sinhala_ml(payload: SinhalaEssayIn):
     # Detect or use provided grade
     detected_grade = infer_grade_from_text(payload.text, payload.grade)
@@ -110,7 +128,7 @@ def score_sinhala_ml(payload: SinhalaEssayIn):
 # -----------------------------
 # Batch Fairness Evaluation
 # -----------------------------
-@app.post("/fairness-eval", response_model=FairnessReport)
+@app.post("/fairness-eval", response_model=FairnessReport, dependencies=[Depends(verify_api_key)])
 def fairness_eval(payload: List[FairnessEvalIn]):
 
     scores = [p.score for p in payload]

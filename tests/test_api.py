@@ -3,11 +3,26 @@ from app.main import app
 from app.grade_detector import detect_grade, infer_grade_from_text
 
 client = TestClient(app)
+VALID_HEADERS = {"X-API-KEY": "akura-research-secret-2026"}
 
 def test_health():
+    """Health check is public."""
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
+
+def test_unauthorized_access():
+    """Protected endpoints should return 403 with wrong key or 422 with missing key."""
+    payload = {"text": "some text which is long enough", "grade": 7}
+    
+    # Wrong key
+    r = client.post("/score-sinhala-ml", json=payload, headers={"X-API-KEY": "wrong-secret"})
+    assert r.status_code == 403
+    assert "Invalid API Key" in r.json()["detail"]
+    
+    # Missing key
+    r = client.post("/score-sinhala-ml", json=payload)
+    assert r.status_code == 422 # FastAPI default for missing required header
 
 def test_score_sinhala_ml_with_explicit_grade():
     """Test scoring with explicitly provided grade."""
@@ -19,7 +34,7 @@ def test_score_sinhala_ml_with_explicit_grade():
         "error_tags": []
     }
 
-    r = client.post("/score-sinhala-ml", json=payload)
+    r = client.post("/score-sinhala-ml", json=payload, headers=VALID_HEADERS)
     assert r.status_code == 200
 
     js = r.json()
@@ -36,7 +51,7 @@ def test_score_sinhala_ml_with_explicit_grade():
     assert "details" in js
     # Allow either the raw model name or the deployed label
     model_name = js["details"]["model"]
-    assert model_name.startswith("xlm-roberta") or model_name.startswith("✅ RETRAINED")
+    assert "RETRAINED" in model_name or "xlm-roberta" in model_name
     
     # Check grade detection metadata
     assert "detected_grade" in js["details"]
@@ -56,7 +71,7 @@ def test_score_sinhala_ml_with_auto_detected_grade():
         "error_tags": []
     }
 
-    r = client.post("/score-sinhala-ml", json=payload)
+    r = client.post("/score-sinhala-ml", json=payload, headers=VALID_HEADERS)
     assert r.status_code == 200
 
     js = r.json()

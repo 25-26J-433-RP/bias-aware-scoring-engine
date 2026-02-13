@@ -27,8 +27,8 @@ class ScoreOut(BaseModel):
 # Sinhala Scoring Inputs
 # -----------------------------
 class SinhalaEssayIn(BaseModel):
-    text: str
-    grade: Optional[int] = None  # If not provided, will be detected from text
+    text: str = Field(..., min_length=10, max_length=5000, description="Sinhala essay text")
+    grade: Optional[int] = Field(None, ge=3, le=8, description="Grade level (3-8)")
     topic: Optional[str] = None
     dyslexic_flag: bool = False
     error_tags: Optional[List[str]] = None
