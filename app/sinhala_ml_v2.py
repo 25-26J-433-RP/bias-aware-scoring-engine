@@ -173,14 +173,128 @@ def apply_fairness_mitigation(score_dict: dict, dyslexic_flag: bool, grade: int)
     return score_dict
 
 
-def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False) -> dict:
+
+import re
+
+
+def validate_sinhala_content(text: str) -> tuple[bool, str, str]:
+    """
+    Validate and CLEAN the text.
+    - REJECTS if too little Sinhala content.
+    - CLEANS mixed-script garbage (common in OCR) instead of rejecting entire text,
+      unless the garbage overwhelms the text.
+      
+    Returns:
+        (is_valid, reason_or_warning, cleaned_text)
+    """
+    if not text or not text.strip():
+        return False, "Empty text", ""
+
+    words = text.split()
+    total_words = len(words)
+    
+    if total_words < 5:
+        return True, "Short text", text
+
+    sinhala_pattern = re.compile(r'[\u0D80-\u0DFF]')
+    latin_digit_pattern = re.compile(r'[a-zA-Z0-9]')
+
+    valid_sinhala_words = []
+    mixed_garbage_count = 0
+    pure_garbage_count = 0
+
+    common_stops = {
+        'සහ', 'හා', 'ද', 'ය', 'ගැන', 'විට', 'ලෙස', 'හෝ', 'නමුත්', 'නිසා', 
+        'ලැබේ', 'කරයි', 'ඇත', 'නැත', 'මෙම', 'එම', 'අපි', 'ඔහු', 'ඇය', 
+        'එය', 'මේ', 'ඒ', 'අර', 'විසින්', 'සමග', 'වැනි', 'බව'
+
+
+    }
+    
+    x_pattern = re.compile(r'[^\u0D80-\u0DFFa-zA-Z0-9\s.,!?:;\"\'()\[\]{}]')
+
+    for word in words:
+
+        # 1. Strip external punctuation
+        clean_word = word.strip(".,!?:;\"'()[]{}")
+
+        
+        has_sinhala = bool(sinhala_pattern.search(clean_word))
+        has_latin_digit = bool(latin_digit_pattern.search(clean_word))
+        has_symbols = bool(x_pattern.search(clean_word))
+
+        is_mixed = has_sinhala and (has_latin_digit or has_symbols)
+        
+        if is_mixed:
+            # STRIP mode: Remove only the non-Sinhala non-punctuation characters
+            # Keep Sinhala chars and standard punctuation
+            # This rescues suffixes like 'යෙන්' from 'DW76යෙන්'
+            recovered_word = re.sub(r'[^\u0D80-\u0DFF]', '', clean_word)
+            
+            if len(recovered_word) > 0:
+                valid_sinhala_words.append(recovered_word)
+                mixed_garbage_count += 1
+            else:
+                pure_garbage_count += 1
+            continue
+
+        if has_latin_digit and not has_sinhala:
+            # Pure latin/digit garbage
+            pure_garbage_count += 1
+            continue
+            
+        # Pure Sinhala (possibly with standard punctuation)
+        valid_sinhala_words.append(word)
+
+
+    cleaned_text = " ".join(valid_sinhala_words)
+    cleaned_word_count = len(valid_sinhala_words)
+    
+    # Validation Logic
+    if cleaned_word_count == 0:
+        return False, "No valid Sinhala content found after cleaning", ""
+        
+    cleaning_ratio = cleaned_word_count / total_words
+    
+    # If we removed more than 40% of the text as garbage, it's probably bad input
+    if cleaning_ratio < 0.6:
+        return False, f"Too much garbage detected (kept {int(cleaning_ratio*100)}%)", ""
+
+    return True, "Valid", cleaned_text
+
+
+
+from .rubric_evaluator import rubric_evaluator
+
+def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False, topic: Optional[str] = None) -> dict:
+    
+    # 🔹 Validate and Clean Content
+    is_valid, reason, cleaned_text = validate_sinhala_content(text)
+    
+    if not is_valid:
+        print(f"[SINHALA-ML] Validation Failed: {reason}")
+        return {
+            "richness_5": 0.0,
+            "organization_6": 0.0,
+            "technical_3": 0.0,
+            "total_14": 0.0,
+            "fairness_report": {
+                "mitigation_applied": False,
+                "note": f"Scoring rejected due to invalid content: {reason}"
+            }
+        }
+        
+    # debug log
+    if text != cleaned_text:
+        print(f"[SINHALA-ML] OCR Cleaning applied. Removed garbage tokens.")
+
     # Get lazy-loaded model and tokenizer (will be None in test mode)
     model, tokenizer = load_model()
     
     # 🔹 CI-safe dummy output (no ML load)
     if model is None:
         # Apply grade adjustment even to dummy output
-        text_length = len(text.split())
+        text_length = len(cleaned_text.split())
         adjustment = _get_grade_adjustment_factor(grade, text_length)
         
         base_richness = 3.0
@@ -198,7 +312,7 @@ def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False) -> d
     
 
     enc = tokenizer(
-        text,
+        cleaned_text,
         return_tensors="pt",
         truncation=True,
         max_length=512
@@ -216,21 +330,113 @@ def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False) -> d
             attention_mask=attention_mask,
             grade_id=grade_tensor
         )
+        
+        # 🔹 Extract CLS for theme relevance if topic provided
+        cls_emb = None
+        if topic and topic.strip():
+            # We can re-run encoder but more efficient to just use existing model output if accessible
+            # However, SinhalaMultiHeadRegressor doesn't return CLS. Let's get it manually.
+            out_encoder = model.encoder(input_ids=input_ids, attention_mask=attention_mask)
+            cls_emb = out_encoder.last_hidden_state[:, 0, :]
 
     # Apply grade-aware adjustment to outputs
-    text_length = len(text.split())
+    words = cleaned_text.split()
+    text_length = len(words)
     adjustment_factor = _get_grade_adjustment_factor(grade, text_length)
     
-    richness_adjusted = float(outputs["richness_5"]) * adjustment_factor
-    organization_adjusted = float(outputs["organization_6"]) * adjustment_factor
-    technical_adjusted = float(outputs["technical_3"]) * adjustment_factor
-    total_adjusted = float(outputs["total_14"]) * adjustment_factor
+    # Base scores from ML model
+    richness = float(outputs["richness_5"]) * adjustment_factor
+    organization = float(outputs["organization_6"]) * adjustment_factor
+    technical = float(outputs["technical_3"]) * adjustment_factor
 
+    # ══════════════════════════════════════════════════════════════
+    # HYBRID PHASE 1: Theme Relevance → affects richness_5
+    # Uses XLM-R CLS cosine similarity (ML) + tiered penalty (Rule)
+    # ══════════════════════════════════════════════════════════════
+    relevance_score = 1.0
+    print(f"[HYBRID] Topic received: '{topic}' (type={type(topic).__name__})")
+    if topic and cls_emb is not None:
+        relevance_score = rubric_evaluator.compute_theme_relevance(
+            cls_emb, topic, model, tokenizer, DEVICE,
+            essay_text=cleaned_text
+        )
+        print(f"[HYBRID] Theme Relevance Score: {relevance_score:.3f}")
+
+    # ══════════════════════════════════════════════════════════════
+    # HYBRID PHASE 2: Technical Analysis → affects technical_3
+    # Punctuation rules (6) + Heuristic Grammar (5 checks)
+    # ══════════════════════════════════════════════════════════════
+    tech_analysis = rubric_evaluator.analyze_technical(cleaned_text)
+    technical -= tech_analysis["penalty"]
+    technical = max(0.3, technical)  # Floor of 0.3 for technical
+    
+    if tech_analysis["violations"]:
+        print(f"[HYBRID] Punctuation Violations: {len(tech_analysis['violations'])}")
+    if tech_analysis["grammar_issues"]:
+        print(f"[HYBRID] Grammar Issues: {len(tech_analysis['grammar_issues'])}")
+
+    # ══════════════════════════════════════════════════════════════
+    # HYBRID PHASE 3: Richness Penalty → affects richness_5
+    # Word Count (min 150) + Theme Relevance (cosine similarity)
+    # ══════════════════════════════════════════════════════════════
+    richness_penalty_info = rubric_evaluator.compute_richness_penalty(
+        relevance_score, text_length
+    )
+    
+    # Apply theme penalty
+    if richness_penalty_info["theme_penalty"] > 0:
+        richness -= richness_penalty_info["theme_penalty"]
+        print(f"[HYBRID] Theme Penalty: -{richness_penalty_info['theme_penalty']}")
+    
+    # Apply word count penalty
+    if richness_penalty_info["word_count_penalty"] > 0:
+        richness -= richness_penalty_info["word_count_penalty"]
+        print(f"[HYBRID] Word Count Penalty: -{richness_penalty_info['word_count_penalty']} "
+              f"(Length: {text_length}/150)")
+    
+    # Floor for richness
+    richness = max(0.3, richness)
+
+    # ══════════════════════════════════════════════════════════════
+    # FINAL SCORING
+    # ══════════════════════════════════════════════════════════════
+    # Clamp individual scores to their rubric maximums
+    richness = min(5.0, richness)
+    organization = min(6.0, organization)
+    technical = min(3.0, technical)
+    
     scores = {
-        "richness_5": round(richness_adjusted, 2),
-        "organization_6": round(organization_adjusted, 2),
-        "technical_3": round(technical_adjusted, 2),
-        "total_14": round(total_adjusted, 2),
+        "richness_5": round(richness, 2),
+        "organization_6": round(organization, 2),
+        "technical_3": round(technical, 2),
+        "total_14": round(min(14.0, richness + organization + technical), 2),
     }
 
-    return apply_fairness_mitigation(scores, dyslexic_flag, grade)
+    result = apply_fairness_mitigation(scores, dyslexic_flag, grade)
+    
+    # ══════════════════════════════════════════════════════════════
+    # TRANSPARENCY: Full Rubric Report for Research Logging
+    # ══════════════════════════════════════════════════════════════
+    if "fairness_report" not in result:
+        result["fairness_report"] = {}
+    
+    result["fairness_report"]["rubric_notes"] = {
+        "scoring_method": "Hybrid (ML + Rule-Based)",
+        "theme_relevance": round(relevance_score, 3),
+        "theme_penalty": richness_penalty_info["theme_penalty"],
+        "word_count": text_length,
+        "word_count_penalty": richness_penalty_info["word_count_penalty"],
+        "technical_violations": tech_analysis["violations"],
+        "grammar_issues": tech_analysis["grammar_issues"],
+        "technical_penalty": tech_analysis["penalty"],
+        "grade_adjustment_factor": round(adjustment_factor, 3)
+    }
+
+    # Add note about cleaning if applicable
+    if text != cleaned_text:
+        existing_note = result["fairness_report"].get("note", "")
+        result["fairness_report"]["note"] = (existing_note + " [OCR Garbage Cleaned]").strip()
+        
+    return result
+
+

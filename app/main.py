@@ -100,11 +100,14 @@ def score_sinhala_ml(payload: SinhalaEssayIn):
     # DEBUG: Log what grade was received and used
     print(f"[SCORE-SINHALA-ML] Received grade: {payload.grade}, Using grade: {detected_grade}")
     
+
     scores = score_sinhala_ml_v2(
         text=payload.text,
         grade=detected_grade,
-        dyslexic_flag=payload.dyslexic_flag
+        dyslexic_flag=payload.dyslexic_flag,
+        topic=payload.topic
     )
+
 
     final_score = min(100, (scores["total_14"] / 14) * 100)
 
