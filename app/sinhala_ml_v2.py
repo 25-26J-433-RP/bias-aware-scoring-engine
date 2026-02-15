@@ -2,6 +2,7 @@
 
 import os
 import torch
+from typing import Optional
 
 MODEL_SOURCE = "akura-official/xlm-roberta-large-sinhala-multihead"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
