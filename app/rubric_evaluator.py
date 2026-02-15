@@ -83,6 +83,12 @@ class RubricEvaluator:
             r'|තැන්ය|ලෙඩය|වැඩිය|එපා)$'        # Predicative endings
         )
         
+        # Fragment markers: Suffixes that imply the sentence should continue
+        # If the sentence ends with these + a full stop, it's a "Grammar Fragment"
+        self.sinhala_fragment_enders = re.compile(
+            r'(මින්|දී|මේදී|තැන්දී|විටදී|ට|මට|වීමට|සඳහා|ලා|බව|බවත්)[.!?।\s]*$'
+        )
+
         # Common Sinhala sentence connectors (subordinating conjunctions)
         self.sinhala_connectors = re.compile(
             r'(නමුත්|එහෙත්|එනමුත්|එසේම|තවද'
@@ -319,6 +325,19 @@ class RubricEvaluator:
             issues.append(
                 f"Grammar: Repeated words — {repeat_count} immediate word repetition(s)"
             )
+        
+        # ─── Check 5: Sentence Fragment Detection ───
+        if sentences:
+            fragment_count = 0
+            for sent in sentences:
+                if self.sinhala_fragment_enders.search(sent):
+                    fragment_count += 1
+            
+            if fragment_count > 0:
+                issues.append(
+                    f"Grammar: Incomplete sentence(s) (Fragments) — {fragment_count} sentence(s) "
+                    f"end with continuing markers (e.g., 'දී', 'මින්', 'ට') followed by a full stop."
+                )
         
         # NOTE: Cohesion/connector analysis removed.
         # Young students (Grade 3-5) write simple sentence-by-sentence essays
