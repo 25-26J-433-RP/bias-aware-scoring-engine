@@ -15,16 +15,6 @@ from .sinhala_baseline import baseline_sinhala_score
 from .sinhala_ml_v2 import score_sinhala_ml_v2
 from .grade_detector import infer_grade_from_text
 from .fairness import spd, dir_ratio, eod, binarize
-# Import the fairness analysis script
-# Note: We need to ensure 'analysis' is in the python path or accessible
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from analysis.firestore_fairness_eval import run_fairness_eval
-# Import the fairness analysis script
-# Note: We need to ensure 'analysis' is in the python path or accessible
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from analysis.firestore_fairness_eval import run_fairness_eval
 
 # -----------------------------
 # Security Configuration
@@ -110,14 +100,12 @@ def score_sinhala_ml(payload: SinhalaEssayIn):
     # DEBUG: Log what grade was received and used
     print(f"[SCORE-SINHALA-ML] Received grade: {payload.grade}, Using grade: {detected_grade}")
     
-
     scores = score_sinhala_ml_v2(
         text=payload.text,
         grade=detected_grade,
         dyslexic_flag=payload.dyslexic_flag,
         topic=payload.topic
     )
-
 
     final_score = min(100, (scores["total_14"] / 14) * 100)
 
@@ -155,32 +143,22 @@ def fairness_eval(payload: List[FairnessEvalIn]):
 
 
 # -----------------------------
-# Trigger Fairness Analysis
+# Trigger Fairness Analysis (Research Admin)
 # -----------------------------
 @app.post("/run-analysis", dependencies=[Depends(verify_api_key)])
 def trigger_fairness_analysis():
     """
     Manually triggers the Firestore fairness evaluation script.
     This calculates SPD/DIR for all grades and updates 'fairnessReports' in Firestore.
+    Includes lazy-import to prevent CI/Startup crashes.
     """
     try:
-        run_fairness_eval()
-        return {"status": "success", "message": "Fairness analysis completed successfully."}
-    except Exception as e:
-        print(f"Error running analysis: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# -----------------------------
-# Trigger Fairness Analysis
-# -----------------------------
-@app.post("/run-analysis", dependencies=[Depends(verify_api_key)])
-def trigger_fairness_analysis():
-    """
-    Manually triggers the Firestore fairness evaluation script.
-    This calculates SPD/DIR for all grades and updates 'fairnessReports' in Firestore.
-    """
-    try:
+        # Lazy import to prevent crashes in environments without research dependencies/creds
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from analysis.firestore_fairness_eval import run_fairness_eval
+        
         run_fairness_eval()
         return {"status": "success", "message": "Fairness analysis completed successfully."}
     except Exception as e:
@@ -191,9 +169,6 @@ def trigger_fairness_analysis():
 # -----------------------------
 # Cloud Run / Server startup
 # -----------------------------
-import os
-import uvicorn
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     uvicorn.run(
@@ -202,4 +177,3 @@ if __name__ == "__main__":
         port=port,
         log_level="info"
     )
-

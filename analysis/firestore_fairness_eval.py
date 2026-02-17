@@ -16,18 +16,29 @@ from app.fairness import binarize, spd, dir_ratio
 
 
 # -----------------------------
-# 1. Initialize Firestore
+# 1. Initialize Firestore (Lazy)
 # -----------------------------
-cred = credentials.Certificate("serviceAccountKey.json")
-firebase_admin.initialize_app(cred)
+db = None
 
-db = firestore.client()
+def get_db():
+    global db
+    if db is None:
+        try:
+            # Check if already initialized
+            firebase_admin.get_app()
+        except ValueError:
+            # Initialize if not already done
+            cred = credentials.Certificate("serviceAccountKey.json")
+            firebase_admin.initialize_app(cred)
+        db = firestore.client()
+    return db
 
 
 # -----------------------------
 # 2. Fetch batch essays (by grade)
 # -----------------------------
 def fetch_user_images(grade_filter: int):
+    db = get_db()
     docs = db.collection("userImages").stream()
     rows = []
 
@@ -74,6 +85,7 @@ def fetch_user_images(grade_filter: int):
 # 3. Store fairness results as separate documents
 # -------------------------------------------------
 def store_fairness_report(report: dict):
+    db = get_db()
     doc_id = f"grade_{report['grade']}_{datetime.utcnow().strftime('%Y%m%d')}"
 
     db.collection("fairnessReports").document(doc_id).set({
