@@ -29,9 +29,15 @@ RUN pip install --no-cache-dir --prefer-binary \
     "transformers==4.38.1" \
     "sentencepiece==0.1.99" \
     "protobuf==4.25.3" \
+    "pandas>=2.0.0" \
+    "requests>=2.31.0" \
+    "firebase-admin>=6.5.0" \
+    "scipy>=1.11.0" \
+    "tqdm>=4.66.0" \
     && pip install --no-cache-dir torch==2.2.0 --index-url https://download.pytorch.org/whl/cpu
 
 COPY app/ /app/app/
+COPY analysis/ /app/analysis/
 COPY pyproject.toml /app/
 ENV HF_HOME=/app/hf_cache
 COPY README.md /app/
