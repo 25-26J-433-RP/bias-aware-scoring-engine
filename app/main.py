@@ -100,14 +100,12 @@ def score_sinhala_ml(payload: SinhalaEssayIn):
     # DEBUG: Log what grade was received and used
     print(f"[SCORE-SINHALA-ML] Received grade: {payload.grade}, Using grade: {detected_grade}")
     
-
     scores = score_sinhala_ml_v2(
         text=payload.text,
         grade=detected_grade,
         dyslexic_flag=payload.dyslexic_flag,
         topic=payload.topic
     )
-
 
     final_score = min(100, (scores["total_14"] / 14) * 100)
 
@@ -121,11 +119,7 @@ def score_sinhala_ml(payload: SinhalaEssayIn):
             "detected_grade": detected_grade,
             "grade_auto_detected": payload.grade is None
         },
-        "fairness_report": {
-            "spd": 0.0, # Placeholder until batch eval
-            "dir": 1.0, # Placeholder
-            "mitigation_used": scores.get("mitigation_info", None)
-        } if "mitigation_info" in scores else None
+        "fairness_report": scores.get("fairness_report") if isinstance(scores, dict) else None
     }
 
 # -----------------------------
@@ -149,11 +143,32 @@ def fairness_eval(payload: List[FairnessEvalIn]):
 
 
 # -----------------------------
+# Trigger Fairness Analysis (Research Admin)
+# -----------------------------
+@app.post("/run-analysis", dependencies=[Depends(verify_api_key)])
+def trigger_fairness_analysis():
+    """
+    Manually triggers the Firestore fairness evaluation script.
+    This calculates SPD/DIR for all grades and updates 'fairnessReports' in Firestore.
+    Includes lazy-import to prevent CI/Startup crashes.
+    """
+    try:
+        # Lazy import to prevent crashes in environments without research dependencies/creds
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from analysis.firestore_fairness_eval import run_fairness_eval
+        
+        run_fairness_eval()
+        return {"status": "success", "message": "Fairness analysis completed successfully."}
+    except Exception as e:
+        print(f"Error running analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# -----------------------------
 # Cloud Run / Server startup
 # -----------------------------
-import os
-import uvicorn
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     uvicorn.run(
@@ -162,4 +177,3 @@ if __name__ == "__main__":
         port=port,
         log_level="info"
     )
-
