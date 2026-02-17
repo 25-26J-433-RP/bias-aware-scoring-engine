@@ -1,14 +1,21 @@
-import requests
-import json
+import pytest
+from fastapi.testclient import TestClient
+from app.main import app
 
-# Configuration
-BASE_URL = "http://localhost:8000"
-ENDPOINT = f"{BASE_URL}/score-sinhala-ml"
+# Initialize TestClient
+client = TestClient(app)
+VALID_HEADERS = {"X-API-KEY": "akura-research-secret-2026"}
 
-# Sample Sinhala Essay Text
+# Sample Sinhala Essay Text (Generic for testing)
 TEST_TEXT = "මගේ තාත්තා ඉතා හොඳ පුද්ගලයෙකි. ඔහු අපට ආදරය කරයි. ඔහු වෙහෙස මහන්සි වී වැඩ කරයි."
 
-def test_scoring(grade, dyslexic_flag):
+@pytest.mark.parametrize("grade,dyslexic_flag", [
+    (4, False), # Baseline
+    (4, True),  # Mitigation
+    (8, True),  # High Grade Mitigation
+    (6, True)   # Significant but small gap
+])
+def test_mitigation_logic(grade, dyslexic_flag):
     payload = {
         "text": TEST_TEXT,
         "grade": grade,
@@ -16,57 +23,28 @@ def test_scoring(grade, dyslexic_flag):
         "dyslexic_flag": dyslexic_flag
     }
     
-    print(f"\n[TEST] Testing Grade {grade} | Dyslexic: {dyslexic_flag}")
-    print("-" * 50)
+    response = client.post("/score-sinhala-ml", json=payload, headers=VALID_HEADERS)
     
-    headers = {
-        "X-API-KEY": "akura-research-secret-2026"
-    }
+    assert response.status_code == 200
+    data = response.json()
+    rubric = data.get("rubric", {})
+    fairness = data.get("fairness_report", {})
     
-    try:
-        response = requests.post(ENDPOINT, json=payload, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            data = response.json()
-            rubric = data.get("rubric", {})
-            fairness = data.get("fairness_report", {})
-            
-            print(f"SUCCESS")
-            print(f"Total Score (14): {rubric.get('total_14')}")
-            print(f"Breakdown: R={rubric.get('richness_5')} | O={rubric.get('organization_6')} | T={rubric.get('technical_3')}")
-            
-            if fairness.get("mitigation_applied"):
-                print(f"MITIGATION APPLIED: YES")
-                print(f"   Boost Amount: +{fairness.get('total_boost', 0)} points")
-                print(f"   Justification: {fairness.get('justification')}")
-            else:
-                print(f"MITIGATION APPLIED: NO")
-                
-            return data
-        else:
-            print(f"FAILED (Status {response.status_code})")
-            print(response.text)
-            return None
-            
-    except Exception as e:
-        print(f"ERROR: {str(e)}")
-        return None
+    # Core assertions
+    assert "score" in data
+    assert "total_14" in rubric
+    
+    # Bias Mitigation Logic Check
+    if dyslexic_flag:
+        # For Grades 4, 6, 8, mitigation should be applied based on empirical analysis
+        assert fairness.get("mitigation_applied") is True
+        assert fairness.get("total_boost", 0) > 0
+        assert "justification" in fairness
+    else:
+        # Baseline non-dyslexic should not have mitigation
+        assert fairness.get("mitigation_applied") is False
+        assert fairness.get("total_boost", 0) == 0
 
 if __name__ == "__main__":
-    print("STARTING RESEARCH VALIDATION TEST")
-    
-    # 1. Test Grade 4 Non-Dyslexic (Baseline)
-    non_dys = test_scoring(grade=4, dyslexic_flag=False)
-    
-    # 2. Test Grade 4 Dyslexic (Should trigger mitigation)
-    dys = test_scoring(grade=4, dyslexic_flag=True)
-    
-    # 3. Test Grade 8 (Should show smaller mitigation)
-    test_scoring(grade=8, dyslexic_flag=True)
-    
-    # 4. Test Grade 6 (Statistically significant but small gap)
-    test_scoring(grade=6, dyslexic_flag=True)
-
-    print("\n" + "="*50)
-    print("TEST COMPLETE")
-    print("="*50)
+    # Allow manual running
+    print("Run with: pytest tests/test_mitigation_api.py")
