@@ -412,20 +412,18 @@ class ConditionalFairnessMitigator:
         """
         import os
         
-        # Check if credentials file exists before attempting to load
-        if not os.path.exists("serviceAccountKey.json"):
-            print("[MITIGATION] serviceAccountKey.json not found - mitigation will remain inactive.")
-            print("[MITIGATION] This is expected in production Cloud Run (uses Workload Identity).")
-            return
-        
         try:
             import firebase_admin
             from firebase_admin import credentials, firestore
             
             # Initialize Firebase if not already done
             try:
-                cred = credentials.Certificate("serviceAccountKey.json")
-                firebase_admin.initialize_app(cred)
+                if os.path.exists("serviceAccountKey.json"):
+                    cred = credentials.Certificate("serviceAccountKey.json")
+                    firebase_admin.initialize_app(cred)
+                else:
+                    # In Cloud Run, it will automatically use the service account's default credentials
+                    firebase_admin.initialize_app()
             except ValueError:
                 # Already initialized
                 pass
