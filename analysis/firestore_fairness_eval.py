@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -28,8 +29,12 @@ def get_db():
             firebase_admin.get_app()
         except ValueError:
             # Initialize if not already done
-            cred = credentials.Certificate("serviceAccountKey.json")
-            firebase_admin.initialize_app(cred)
+            if os.path.exists("serviceAccountKey.json"):
+                cred = credentials.Certificate("serviceAccountKey.json")
+                firebase_admin.initialize_app(cred)
+            else:
+                # In Cloud Run, it will automatically use the service account's default credentials
+                firebase_admin.initialize_app()
         db = firestore.client()
     return db
 
