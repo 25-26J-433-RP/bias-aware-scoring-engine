@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi import FastAPI, Depends, HTTPException, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 import os
@@ -146,24 +146,32 @@ def fairness_eval(payload: List[FairnessEvalIn]):
 # Trigger Fairness Analysis (Research Admin)
 # -----------------------------
 @app.post("/run-analysis", dependencies=[Depends(verify_api_key)])
-def trigger_fairness_analysis():
+def trigger_fairness_analysis(background_tasks: BackgroundTasks):
     """
     Manually triggers the Firestore fairness evaluation script.
-    This calculates SPD/DIR for all grades and updates 'fairnessReports' in Firestore.
-    Includes lazy-import to prevent CI/Startup crashes.
+    Uses BackgroundTasks to prevent gateway timeouts (502 errors).
     """
-    try:
-        # Lazy import to prevent crashes in environments without research dependencies/creds
-        import sys
-        import os
-        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from analysis.firestore_fairness_eval import run_fairness_eval
-        
-        run_fairness_eval()
-        return {"status": "success", "message": "Fairness analysis completed successfully."}
-    except Exception as e:
-        print(f"Error running analysis: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    def run_analysis_task():
+        try:
+            # Lazy import to prevent crashes in environments without research dependencies/creds
+            import sys
+            import os
+            sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from analysis.firestore_fairness_eval import run_fairness_eval
+            
+            print("[BACKGROUND] Starting fairness analysis...")
+            run_fairness_eval()
+            print("[BACKGROUND] Fairness analysis completed successfully.")
+        except Exception as e:
+            print(f"[BACKGROUND ERROR] Error running analysis: {e}")
+
+    # Add to background tasks and return immediately
+    background_tasks.add_task(run_analysis_task)
+    
+    return {
+        "status": "success", 
+        "message": "Fairness analysis has been started in the background. Results will appear in Firestore shortly."
+    }
 
 
 # -----------------------------
