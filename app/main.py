@@ -115,7 +115,8 @@ def score_sinhala_ml(payload: SinhalaEssayIn, request: Request):
             "model": "✅ RETRAINED MODEL (Cloud)",
             "detected_grade": detected_grade,
             "grade_auto_detected": payload.grade is None
-        }
+        },
+        "fairness_report": scores.get("fairness_report") if isinstance(scores, dict) else None
     }
 
 # -----------------------------
