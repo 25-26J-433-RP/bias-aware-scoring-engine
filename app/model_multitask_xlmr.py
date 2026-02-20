@@ -50,4 +50,5 @@ class SinhalaMultiHeadRegressor(PreTrainedModel):
             "organization_6": self.organization(x).squeeze(-1),
             "technical_3": self.technical(x).squeeze(-1),
             "total_14": self.total(x).squeeze(-1),
+            "cls_emb": cls  # Return this to avoid re-running encoder
         }
