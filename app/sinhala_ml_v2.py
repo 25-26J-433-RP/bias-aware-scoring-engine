@@ -1,7 +1,6 @@
-# app/sinhala_ml_v2.py
-
 import os
 import torch
+import threading
 from typing import Optional
 
 MODEL_SOURCE = "akura-official/xlm-roberta-large-sinhala-multihead"
@@ -13,6 +12,7 @@ IS_TEST = os.getenv("DISABLE_ML", "0") == "1"
 # Lazy-loaded model and tokenizer (initialized on first use)
 _tokenizer = None
 _model = None
+_load_lock = threading.Lock()
 
 
 def load_model():
@@ -22,11 +22,18 @@ def load_model():
     """
     global _model, _tokenizer
     
+    # Fast path: already loaded
     if _model is not None:
         return _model, _tokenizer
-    
-    if IS_TEST:
-        return None, None
+        
+    # Thread-safe loading
+    with _load_lock:
+        # Double check after acquiring lock
+        if _model is not None:
+            return _model, _tokenizer
+            
+        if IS_TEST:
+            return None, None
     
     print("[SINHALA-ML] Loading model and tokenizer...")
     
