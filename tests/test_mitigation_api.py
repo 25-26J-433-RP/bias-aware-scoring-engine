@@ -28,7 +28,7 @@ def test_mitigation_logic(grade, dyslexic_flag):
     assert response.status_code == 200
     data = response.json()
     rubric = data.get("rubric", {})
-    fairness = data.get("fairness_report", {})
+    fairness = rubric.get("fairness_report", {})
     
     # Core assertions
     assert "score" in data

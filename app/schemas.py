@@ -48,7 +48,6 @@ class SinhalaMLOut(BaseModel):
     score: float
     details: dict
     rubric: dict  # Full rubric with hybrid scoring details
-    fairness_report: Optional[dict] = None  # Rich fairness + rubric notes
 
 
 # -----------------------------
