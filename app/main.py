@@ -1,7 +1,12 @@
-from fastapi import FastAPI, Depends, HTTPException, Header, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, Header, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 import os
+import uvicorn
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from .schemas import (
     EssayIn, ScoreOut,
@@ -31,7 +36,10 @@ async def verify_api_key(x_api_key: str = Header(..., alias=API_KEY_NAME)):
         )
     return x_api_key
 
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Bias-Aware Sinhala Essay Grader", version="1.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -62,23 +70,11 @@ def health():
 
 
 # -----------------------------
-# English Essay Scoring
-# -----------------------------
-@app.post("/score", response_model=ScoreOut)
-def score(payload: EssayIn):
-    score_value, details = score_essay(payload.text, payload.prompt)
-    return {
-        "score": round(score_value, 2),
-        "details": details,
-        "fairness_report": None
-    }
-
-
-# -----------------------------
 # Sinhala Baseline Scoring
 # -----------------------------
 @app.post("/score-sinhala", dependencies=[Depends(verify_api_key)])
-def score_sinhala(payload: SinhalaEssayIn):
+@limiter.limit("30/minute")
+def score_sinhala(payload: SinhalaEssayIn, request: Request):
     score, details = baseline_sinhala_score(payload.text)
     return {
         "score": score,
@@ -93,7 +89,8 @@ def score_sinhala(payload: SinhalaEssayIn):
 # Grade-aware: Automatically detects grade if not provided
 # -----------------------------
 @app.post("/score-sinhala-ml", response_model=SinhalaMLOut, dependencies=[Depends(verify_api_key)])
-def score_sinhala_ml(payload: SinhalaEssayIn):
+@limiter.limit("20/minute")
+def score_sinhala_ml(payload: SinhalaEssayIn, request: Request):
     # Detect or use provided grade
     detected_grade = infer_grade_from_text(payload.text, payload.grade)
     
@@ -126,7 +123,8 @@ def score_sinhala_ml(payload: SinhalaEssayIn):
 # Batch Fairness Evaluation
 # -----------------------------
 @app.post("/fairness-eval", response_model=FairnessReport, dependencies=[Depends(verify_api_key)])
-def fairness_eval(payload: List[FairnessEvalIn]):
+@limiter.limit("20/minute")
+def fairness_eval(payload: List[FairnessEvalIn], request: Request):
 
     scores = [p.score for p in payload]
     y_true = [p.y_true for p in payload]
@@ -146,7 +144,8 @@ def fairness_eval(payload: List[FairnessEvalIn]):
 # Trigger Fairness Analysis (Research Admin)
 # -----------------------------
 @app.post("/run-analysis", dependencies=[Depends(verify_api_key)])
-def trigger_fairness_analysis(background_tasks: BackgroundTasks):
+@limiter.limit("5/minute")
+def trigger_fairness_analysis(background_tasks: BackgroundTasks, request: Request):
     """
     Manually triggers the Firestore fairness evaluation script.
     Uses BackgroundTasks to prevent gateway timeouts (502 errors).

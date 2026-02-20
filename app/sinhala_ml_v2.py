@@ -34,17 +34,24 @@ def load_model():
     from transformers import AutoTokenizer
     from .model_multitask_xlmr import SinhalaMultiHeadRegressor
     
+    # In production/deployment, we should prefer local files to avoid 429 errors
+    # The Dockerfile pre-downloads these to /app/hf_cache
+    is_offline = os.getenv("TRANSFORMERS_OFFLINE", "0") == "1"
+    
     try:
+        print(f"[SINHALA-ML] Loading from cache (offline={is_offline})...")
         _tokenizer = AutoTokenizer.from_pretrained(
             MODEL_SOURCE,
             use_fast=False,
-            trust_remote_code=True
+            trust_remote_code=True,
+            local_files_only=is_offline
         )
         print("[SINHALA-ML] Tokenizer loaded.")
         
         _model = SinhalaMultiHeadRegressor.from_pretrained(
             MODEL_SOURCE,
-            trust_remote_code=True
+            trust_remote_code=True,
+            local_files_only=is_offline
         )
         _model.to(DEVICE)
         _model.eval()
@@ -52,6 +59,10 @@ def load_model():
         
     except Exception as e:
         print(f"[SINHALA-ML] Error loading model: {e}")
+        # If we failed because of offline mode but files aren't there, 
+        # that's a configuration error in the Dockerfile
+        if is_offline:
+            print("[SINHALA-ML] CRITICAL: Offline mode requested but files not found in cache!")
         raise
     
     return _model, _tokenizer
@@ -106,7 +117,9 @@ def _get_grade_adjustment_factor(grade: int, text_length: int) -> float:
 # Multipliers derived from actual mean score gaps between groups
 
 def apply_fairness_mitigation(score_dict: dict, dyslexic_flag: bool, grade: int) -> dict:
-    print(f"[FAIRNESS] Mitigation check: Dyslexic={dyslexic_flag}, Grade={grade}")
+    # Safe logging for production
+    pass 
+
     
     # No adjustment for non-dyslexic students (they are the fairness baseline)
     if not dyslexic_flag:
@@ -215,7 +228,6 @@ def apply_fairness_mitigation(score_dict: dict, dyslexic_flag: bool, grade: int)
         "data_source": "component_bias_analysis.py empirical testing",
     }
     
-    print(f"[FAIRNESS] Applied? {mitigation_applied} | Boost: {score_dict['fairness_report'].get('total_boost', 0)}")
     return score_dict
 
 
@@ -400,7 +412,7 @@ def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False, topi
     # Uses XLM-R CLS cosine similarity (ML) + tiered penalty (Rule)
     # ══════════════════════════════════════════════════════════════
     relevance_score = 1.0
-    print(f"[HYBRID] Topic received: '{topic}' (type={type(topic).__name__})")
+    # Safe logging
     if topic and cls_emb is not None:
         relevance_score = rubric_evaluator.compute_theme_relevance(
             cls_emb, topic, model, tokenizer, DEVICE,
