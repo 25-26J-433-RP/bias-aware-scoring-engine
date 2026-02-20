@@ -390,12 +390,8 @@ def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False, topi
         )
         
         # 🔹 Extract CLS for theme relevance if topic provided
-        cls_emb = None
-        if topic and topic.strip():
-            # We can re-run encoder but more efficient to just use existing model output if accessible
-            # However, SinhalaMultiHeadRegressor doesn't return CLS. Let's get it manually.
-            out_encoder = model.encoder(input_ids=input_ids, attention_mask=attention_mask)
-            cls_emb = out_encoder.last_hidden_state[:, 0, :]
+        # Optimized: CLS is now returned by the model forward pass
+        cls_emb = outputs.get("cls_emb")
 
     # Apply grade-aware adjustment to outputs
     words = cleaned_text.split()
