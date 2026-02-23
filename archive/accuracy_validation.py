@@ -27,8 +27,9 @@ def validate_accuracy():
         }
         
         try:
+            headers = {"X-API-KEY": "akura-research-secret-2026"}
             start_time = time.time()
-            response = requests.post(API_URL, json=payload)
+            response = requests.post(API_URL, json=payload, headers=headers)
             latency = time.time() - start_time
             
             if response.status_code == 200:
