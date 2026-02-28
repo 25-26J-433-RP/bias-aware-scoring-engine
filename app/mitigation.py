@@ -433,28 +433,44 @@ class ConditionalFairnessMitigator:
             
             db = firestore.client()
             
+            # Reset current runtime state before reloading fresh reports.
+            self.grade_metrics = {}
+            self.calibration_multipliers = {grade: 1.0 for grade in range(3, 9)}
+            self.mitigation_active = {grade: False for grade in range(3, 9)}
+
             # Fetch ALL fairness reports and filter in Python (avoids needing composite index)
             all_docs = list(db.collection("fairnessReports").stream())
             
-            # Group by grade and get latest for each (using doc ID which has date)
+            # Group by grade and keep the latest by evaluated_at (fallback: doc ID order).
             grade_reports = {}
             for doc in all_docs:
                 report = doc.to_dict()
                 grade = report.get("grade")
-                doc_id = doc.id  # e.g., "grade_7_20260122"
+                doc_id = doc.id
                 
                 if grade is not None:
-                    # Keep the latest report per grade (doc ID contains date, so alphabetically larger = newer)
+                    current_eval = report.get("evaluated_at")
+                    current_dt = (
+                        current_eval.to_datetime()
+                        if hasattr(current_eval, "to_datetime")
+                        else current_eval
+                    )
+
                     if grade not in grade_reports:
-                        grade_reports[grade] = (doc_id, report)
-                    else:
-                        existing_id = grade_reports[grade][0]
-                        # Compare doc IDs - later dates have higher values
-                        if doc_id > existing_id:
-                            grade_reports[grade] = (doc_id, report)
+                        grade_reports[grade] = (doc_id, report, current_dt)
+                        continue
+
+                    existing_id, _, existing_dt = grade_reports[grade]
+                    if current_dt and existing_dt:
+                        if current_dt > existing_dt:
+                            grade_reports[grade] = (doc_id, report, current_dt)
+                    elif current_dt and not existing_dt:
+                        grade_reports[grade] = (doc_id, report, current_dt)
+                    elif not current_dt and not existing_dt and doc_id > existing_id:
+                        grade_reports[grade] = (doc_id, report, current_dt)
             
             # Load each grade's metrics
-            for grade, (doc_id, report) in grade_reports.items():
+            for grade, (doc_id, report, _) in grade_reports.items():
                 print(f"[MITIGATION] Loading Grade {grade} metrics from {doc_id}...")
                 self.update_fairness_metrics(grade, report)
             

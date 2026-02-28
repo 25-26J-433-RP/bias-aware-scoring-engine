@@ -158,9 +158,12 @@ def trigger_fairness_analysis(background_tasks: BackgroundTasks, request: Reques
             import os
             sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             from analysis.firestore_fairness_eval import run_fairness_eval
+            from .mitigation import mitigator
             
             print("[BACKGROUND] Starting fairness analysis...")
             run_fairness_eval()
+            # Keep runtime mitigation state aligned with newly written dashboard metrics.
+            mitigator.load_metrics_from_firebase()
             print("[BACKGROUND] Fairness analysis completed successfully.")
         except Exception as e:
             print(f"[BACKGROUND ERROR] Error running analysis: {e}")
