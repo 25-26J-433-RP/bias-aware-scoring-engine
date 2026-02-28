@@ -119,18 +119,22 @@ def _get_grade_adjustment_factor(grade: int, text_length: int) -> float:
 
 
 
-# Component-specific calibration based on empirical bias analysis
-# Source: component_bias_analysis.py statistical testing
-# Multipliers derived from actual mean score gaps between groups
+# Legacy component multipliers are kept as an optional fallback when
+# dashboard metrics cannot be loaded at runtime.
+LEGACY_COMPONENT_MULTIPLIERS = {
+    3: {"richness": 1.0800, "organization": 1.0589, "technical": 1.0624},
+    4: {"richness": 1.1760, "organization": 1.1232, "technical": 1.1994},
+    5: {"richness": 1.0436, "organization": 1.0395, "technical": 1.0461},
+    6: {"richness": 1.0215, "organization": 1.0194, "technical": 1.0206},
+    7: {"richness": 1.0400, "organization": 1.0464, "technical": 1.0622},
+    8: {"richness": 1.0735, "organization": 1.0619, "technical": 1.1020},
+}
+
 
 def apply_fairness_mitigation(score_dict: dict, dyslexic_flag: bool, grade: int) -> dict:
-    # Safe logging for production
-    pass 
-
-    
-    # No adjustment for non-dyslexic students (they are the fairness baseline)
+    # No adjustment for non-dyslexic students (baseline group).
     if not dyslexic_flag:
-        score_dict['fairness_report'] = {
+        score_dict["fairness_report"] = {
             "mitigation_applied": False,
             "reason": "Non-dyslexic student - no adjustment needed",
             "protected_attribute": "dyslexic_flag",
@@ -138,103 +142,95 @@ def apply_fairness_mitigation(score_dict: dict, dyslexic_flag: bool, grade: int)
             "grade": grade,
         }
         return score_dict
-    
-    # Component-specific multipliers from Firestore data analysis
-    # Formula: multiplier = mean_non_dyslexic / mean_dyslexic
-    # Source: analysis/calculate_exact_multipliers.py (run on 2026-02-18)
-    # These are EXACT values, not estimates
-    CALIBRATION_MULTIPLIERS = {
-        3: {
-            "richness": 1.0800,
-            "organization": 1.0589,
-            "technical": 1.0624,
-        },  # n_dys=35, n_non_dys=33
-        4: {
-            "richness": 1.1760,
-            "organization": 1.1232,
-            "technical": 1.1994,
-        },  # n_dys=25, n_non_dys=13 (SEVERE bias)
-        5: {
-            "richness": 1.0436,
-            "organization": 1.0395,
-            "technical": 1.0461,
-        },  # n_dys=24, n_non_dys=18
-        6: {
-            "richness": 1.0215,
-            "organization": 1.0194,
-            "technical": 1.0206,
-        },  # n_dys=27, n_non_dys=53 (small effect, apply minimal adjustment)
-        7: {
-            "richness": 1.0400,
-            "organization": 1.0464,
-            "technical": 1.0622,
-        },  # n_dys=37, n_non_dys=41
-        8: {
-            "richness": 1.0735,
-            "organization": 1.0619,
-            "technical": 1.1020,
-        },  # n_dys=79, n_non_dys=91 (small but statistically significant)
-    }
-    
-    mult = CALIBRATION_MULTIPLIERS.get(grade, {"richness": 1.0, "organization": 1.0, "technical": 1.0})
-    
-    # CRITICAL: Only apply if student is dyslexic
-    if not dyslexic_flag:
+
+    from .mitigation import mitigator
+
+    metrics = mitigator.grade_metrics.get(grade)
+    dynamic_active = mitigator.mitigation_active.get(grade, False)
+    dynamic_multiplier = mitigator.calibration_multipliers.get(grade, 1.0)
+
+    use_legacy_fallback = os.getenv("FAIRNESS_STATIC_FALLBACK", "0") == "1"
+
+    if dynamic_active and dynamic_multiplier > 1.0:
+        mult = {
+            "richness": dynamic_multiplier,
+            "organization": dynamic_multiplier,
+            "technical": dynamic_multiplier,
+        }
+        method = "Conditional Proportional Mitigation (Dashboard-Driven)"
+        data_source = "fairnessReports (Firebase)"
+        justification = "Threshold-triggered mitigation from fairness dashboard metrics"
+        fallback_used = False
+    elif use_legacy_fallback:
+        mult = LEGACY_COMPONENT_MULTIPLIERS.get(
+            grade, {"richness": 1.0, "organization": 1.0, "technical": 1.0}
+        )
+        method = "Legacy Component Calibration (Fallback)"
+        data_source = "component_bias_analysis.py empirical testing"
+        justification = "Dashboard metrics unavailable - using configured legacy fallback"
+        fallback_used = True
+    else:
         mult = {"richness": 1.0, "organization": 1.0, "technical": 1.0}
-    
-    # Store original values for transparency
-    original_richness = score_dict.get("richness_5", 0)
-    original_organization = score_dict.get("organization_6", 0)
-    original_technical = score_dict.get("technical_3", 0)
-    original_total = score_dict.get("total_14", 0)
-    
-    # Apply component-specific calibration
+        method = "No mitigation needed"
+        data_source = "fairnessReports (Firebase)"
+        if metrics is None:
+            justification = "No fairness metrics loaded for this grade"
+        else:
+            justification = "No significant unfavorable bias found for this grade"
+        fallback_used = False
+
+    original_richness = score_dict.get("richness_5", 0.0)
+    original_organization = score_dict.get("organization_6", 0.0)
+    original_technical = score_dict.get("technical_3", 0.0)
+    original_total = score_dict.get("total_14", 0.0)
+
     adjusted_richness = min(5.0, original_richness * mult["richness"])
     adjusted_organization = min(6.0, original_organization * mult["organization"])
     adjusted_technical = min(3.0, original_technical * mult["technical"])
-    
-    # Update scores
+
     score_dict["richness_5"] = round(adjusted_richness, 2)
     score_dict["organization_6"] = round(adjusted_organization, 2)
     score_dict["technical_3"] = round(adjusted_technical, 2)
     score_dict["total_14"] = round(adjusted_richness + adjusted_organization + adjusted_technical, 2)
-    
-    # Determine if meaningful mitigation was applied
-    mitigation_applied = (mult["richness"] > 1.01 or mult["organization"] > 1.01 or mult["technical"] > 1.01)
-    
-    # Full transparency reporting
+
+    mitigation_applied = (
+        mult["richness"] > 1.01 or mult["organization"] > 1.01 or mult["technical"] > 1.01
+    )
+
     score_dict["fairness_report"] = {
         "mitigation_applied": mitigation_applied,
-        "method": "Component-Specific Calibration (Empirical)" if mitigation_applied else "No mitigation needed",
+        "method": method if mitigation_applied else "No mitigation needed",
         "protected_attribute": "dyslexic_flag",
         "protected_value": True,
         "grade": grade,
-        # Original values
         "original_richness_5": round(original_richness, 2),
         "original_organization_6": round(original_organization, 2),
         "original_technical_3": round(original_technical, 2),
         "original_total_14": round(original_total, 2),
-        # Adjusted values (same as in score_dict)
         "adjusted_richness_5": round(adjusted_richness, 2),
         "adjusted_organization_6": round(adjusted_organization, 2),
         "adjusted_technical_3": round(adjusted_technical, 2),
         "adjusted_total_14": score_dict["total_14"],
-        # Multipliers applied
         "richness_multiplier": mult["richness"],
         "organization_multiplier": mult["organization"],
         "technical_multiplier": mult["technical"],
-        # Absolute boost
         "richness_boost": round(adjusted_richness - original_richness, 3),
         "organization_boost": round(adjusted_organization - original_organization, 3),
         "technical_boost": round(adjusted_technical - original_technical, 3),
         "total_boost": round(score_dict["total_14"] - original_total, 3),
-        # Scientific justification
-        "justification": "Statistical analysis showed significant ML model bias for this grade" if mitigation_applied 
-                         else ("Non-dyslexic student - no adjustment needed" if not dyslexic_flag 
-                               else "No significant bias found for this grade"),
-        "data_source": "component_bias_analysis.py empirical testing",
+        "justification": justification,
+        "data_source": data_source,
+        "fallback_used": fallback_used,
     }
-    
+
+    if metrics is not None:
+        score_dict["fairness_report"]["dashboard_metrics"] = {
+            "spd": round(metrics.spd, 3),
+            "dir": round(metrics.dir, 3),
+            "sample_size": metrics.sample_size,
+            "thresholds_violated": bool(dynamic_active),
+        }
+
     return score_dict
 
 

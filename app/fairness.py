@@ -1,7 +1,13 @@
 from __future__ import annotations
+
+from typing import Iterable
+
 import numpy as np
-from typing import Iterable, Optional
+
 from .schemas import FairnessReport
+
+# Shared pass/fail threshold used by API evaluation and batch analysis.
+FAIRNESS_PASS_CUTOFF = 45.0
 
 
 def _to_np(x: Iterable) -> np.ndarray:
@@ -11,7 +17,7 @@ def _to_np(x: Iterable) -> np.ndarray:
     return arr
 
 
-def binarize(scores: Iterable[float], cutoff: float = 75.0) -> np.ndarray:
+def binarize(scores: Iterable[float], cutoff: float = FAIRNESS_PASS_CUTOFF) -> np.ndarray:
     s = _to_np(scores).astype(float)
     return (s >= cutoff).astype(int)
 
@@ -23,23 +29,33 @@ def _rate(mask: np.ndarray, positives: np.ndarray) -> float:
 def spd(y_hat_bin: Iterable[int], groups: Iterable[bool]) -> float:
     yb = _to_np(y_hat_bin).astype(int)
     g = _to_np(groups).astype(bool)
-    return _rate(~g, yb) - _rate(g, yb)
+    # AIF360 direction: unprivileged - privileged.
+    # Here, dyslexic students are the unprivileged group (g=True).
+    return _rate(g, yb) - _rate(~g, yb)
 
 
 def dir_ratio(y_hat_bin: Iterable[int], groups: Iterable[bool]) -> float:
     yb = _to_np(y_hat_bin).astype(int)
     g = _to_np(groups).astype(bool)
-    rate_a, rate_b = _rate(~g, yb), _rate(g, yb)
+    # AIF360 direction: unprivileged / privileged.
+    # Here, dyslexic students are the unprivileged group (g=True).
+    rate_unpriv = _rate(g, yb)
+    rate_priv = _rate(~g, yb)
 
-    # SAFE FIX — prevent infinity
-    return float(rate_a / rate_b) if rate_b > 0 else 1.0
+    if rate_priv > 0:
+        return float(rate_unpriv / rate_priv)
+    # If privileged pass rate is zero:
+    # - both zero => neutral
+    # - unprivileged > 0 => favorable to unprivileged (infinite DIR)
+    return 1.0 if rate_unpriv == 0 else float("inf")
 
 
 def eod(y_hat_bin: Iterable[int], y_true: Iterable[int], groups: Iterable[bool]) -> float:
     yb = _to_np(y_hat_bin).astype(int)
     yt = _to_np(y_true).astype(int)
     g = _to_np(groups).astype(bool)
-    return _rate((~g) & (yt == 1), yb) - _rate((g) & (yt == 1), yb)
+    # AIF360-aligned direction: unprivileged - privileged.
+    return _rate((g) & (yt == 1), yb) - _rate((~g) & (yt == 1), yb)
 
 
 def safe_float(x: float) -> float:
@@ -59,7 +75,7 @@ def demo_fairness_report(n: int = 50, seed: int = 0) -> FairnessReport:
     scores = 70 + 10 * ability - 8 * groups.astype(float)
     scores = np.clip(scores, 0, 100)
     y_true = (ability >= 0).astype(int)
-    y_hat_bin = binarize(scores, 75)
+    y_hat_bin = binarize(scores, FAIRNESS_PASS_CUTOFF)
 
     return FairnessReport(
         spd=safe_float(spd(y_hat_bin, groups)),
