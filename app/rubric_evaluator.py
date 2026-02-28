@@ -25,7 +25,7 @@ Sections:
 
 import re
 import torch
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 
 class RubricEvaluator:
@@ -43,7 +43,10 @@ class RubricEvaluator:
         
         # Rule 1: Space before punctuation marks (., : ,)
         # Wrong: "වචනය ." → Correct: "වචනය."
-        self.space_before_punct = re.compile(r'\s+[.,:;]')
+        self.valid_sentence_enders = ".!?।॥"
+        self.space_before_punct = re.compile(
+            rf'\s+[{re.escape(self.valid_sentence_enders)},:;]'
+        )
         
         # Rule 2: Space inside quotation marks
         # Wrong: "" වචනය "" → Correct: ""වචනය""
@@ -55,7 +58,7 @@ class RubricEvaluator:
         
         # Rule 4: Missing full stop (Sinhala purnawishramaya: .)
         # Sentences > 15 words without ending punctuation
-        self.sentence_ender = re.compile(r'[.!?。।]')
+        self.sentence_ender = re.compile(rf'[{re.escape(self.valid_sentence_enders)}]')
         
         # Rule 5: Ellipsis must be exactly 3 dots
         # Wrong: ".." or "...." → Correct: "..."
@@ -64,6 +67,14 @@ class RubricEvaluator:
         # Rule 6: English abbreviation dots mixed with Sinhala
         # e.g., "U.N.O" mixed into Sinhala text without proper spacing
         self.mixed_abbrev = re.compile(r'\b[A-Za-z]\.[A-Za-z]\b(?!\.)')
+        self.missing_space_after_punct = re.compile(
+            rf'([{re.escape(self.valid_sentence_enders)},:;])(?=[^\s{re.escape(self.valid_sentence_enders)},:;\)\]\}}])'
+        )
+        self.repeated_punct = re.compile(r'([,!?;:])\1+|(?<!\.)\.{4,}')
+        self.smart_space_inside_quotes = re.compile(r'[“‘]\s+|\s+[”’]')
+        self.unicode_ellipsis_err = re.compile(r'……+|…\.|\.…')
+        self.repeated_dash = re.compile(r'--+|––+')
+        self.standalone_dash = re.compile(r'(?:(?<=\s)|^)[-–](?:(?=\s)|$)')
 
         # ═══════════════════════════════════════════════════════════════
         # HEURISTIC GRAMMAR PATTERNS (Sinhala-specific)
@@ -116,71 +127,272 @@ class RubricEvaluator:
     # Directly affects: technical_3 (out of 3)
     # ═══════════════════════════════════════════════════════════════
     
+    def normalize_for_model(self, text: str) -> str:
+        """
+        Remove punctuation noise before ML scoring so punctuation edits
+        are handled by rule penalties, not by unstable model shifts.
+        """
+        if not text:
+            return ""
+        punctuation_noise = r"[.,!?;:\"'()\[\]{}<>|/\\`~@#$%^&*_+=\-…।॥]+"
+        normalized = re.sub(punctuation_noise, " ", text)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        return normalized
+
+    def _count_unmatched_pairs(self, text: str) -> Tuple[int, int]:
+        """
+        Returns:
+            (unmatched_quote_count, unmatched_bracket_count)
+        """
+        quote_chars = ['"', "'", "“", "”", "‘", "’"]
+        quote_count = sum(text.count(ch) for ch in quote_chars)
+        unmatched_quotes = quote_count % 2
+
+        stack = []
+        open_to_close = {"(": ")", "[": "]", "{": "}"}
+        closes = set(open_to_close.values())
+        unmatched_brackets = 0
+        for ch in text:
+            if ch in open_to_close:
+                stack.append(ch)
+            elif ch in closes:
+                if not stack or open_to_close[stack[-1]] != ch:
+                    unmatched_brackets += 1
+                else:
+                    stack.pop()
+        unmatched_brackets += len(stack)
+
+        return unmatched_quotes, unmatched_brackets
+
     def analyze_technical(self, text: str) -> Dict[str, Any]:
         """
-        Evaluate the essay against the 6 punctuation/layout rules AND
-        heuristic grammar checks.
-        
+        Evaluate technical skills (03 marks) using explicit sub-allocation:
+          - Punctuation accuracy: 1.00
+          - Word separation & spacing: 0.50
+          - Paragraph structure: 0.75
+          - Layout structure: 0.75
+
         Returns:
             {
-                "penalty": float (0..2.0, deducted from technical_3),
-                "violations": list of human-readable violation descriptions,
-                "grammar_issues": list of grammar-related issues
+                "penalty": float,
+                "punctuation_penalty": float,
+                "grammar_penalty": float,
+                "rule_hits": dict,
+                "technical_rule_score": float,
+                "rule_based_technical_cap": float,
+                "technical_breakdown": dict,
+                "violations": list,
+                "grammar_issues": list
             }
         """
-        violations = []
-        grammar_issues = []
-        
-        # ─── 6 Punctuation & Layout Rules ───
-        
-        # Rule 1: Space before punctuation
+        violations: List[str] = []
+        grammar_issues: List[str] = []
+        rule_hits: Dict[str, int] = {}
+
         matches_r1 = self.space_before_punct.findall(text)
         if matches_r1:
-            violations.append(f"Rule 1: Space before punctuation (.,: ;) — {len(matches_r1)} instance(s)")
-        
-        # Rule 2: Space inside quotation marks
-        if self.space_inside_quotes.search(text):
-            violations.append("Rule 2: Space inside quotation marks")
-        
-        # Rule 3: Space inside brackets
-        if self.space_inside_brackets.search(text):
-            violations.append("Rule 3: Space inside brackets")
-        
-        # Rule 4: Missing full stop / sentence-ending punctuation
-        # Join continuation lines first before checking
-        joined_text = self._join_continuation_lines(text)
-        missing_fullstop = self._check_missing_fullstop(joined_text)
-        if missing_fullstop:
-            violations.append(f"Rule 4: Missing sentence-ending punctuation — {missing_fullstop} sentence(s)")
-        
-        # Rule 5: Ellipsis not exactly 3 dots
-        if self.ellipsis_err.search(text):
-            violations.append("Rule 5: Ellipsis should be exactly 3 dots (...)")
-        
-        # Rule 6: Mixed English abbreviation dots
-        if self.mixed_abbrev.search(text):
-            violations.append("Rule 6: English abbreviation dots mixed with Sinhala text")
-        
-        # ─── Heuristic Grammar Checks ───
-        grammar_issues = self._analyze_grammar(text)
-        
-        # ─── Penalty Calculation ───
-        # Punctuation violations: 0.2 each, max 1.0 from punct alone
-        punct_penalty = min(1.0, len(violations) * 0.2)
-        
-        # Grammar issues: 0.15 each, max 0.5 from grammar alone
-        grammar_penalty = min(0.5, len(grammar_issues) * 0.15)
-        
-        # Total technical penalty capped at 1.5 (out of 3.0 technical marks)
-        # This leaves at least 1.5/3.0 even for essays with many issues
-        total_penalty = min(1.5, punct_penalty + grammar_penalty)
-        
-        return {
-            "penalty": round(total_penalty, 2),
-            "violations": violations,
-            "grammar_issues": grammar_issues
-        }
+            rule_hits["rule_1_space_before_punct"] = len(matches_r1)
+            violations.append(f"Rule 1: Space before punctuation - {len(matches_r1)} instance(s)")
 
+        matches_r2 = self.space_inside_quotes.findall(text)
+        if matches_r2:
+            rule_hits["rule_2_space_inside_quotes"] = len(matches_r2)
+            violations.append("Rule 2: Space inside quotation marks")
+
+        matches_r2b = self.smart_space_inside_quotes.findall(text)
+        if matches_r2b:
+            rule_hits["rule_2b_space_inside_smart_quotes"] = len(matches_r2b)
+            violations.append("Rule 2b: Space inside smart quotation marks (“ ” / ‘ ’)")
+
+        matches_r3 = self.space_inside_brackets.findall(text)
+        if matches_r3:
+            rule_hits["rule_3_space_inside_brackets"] = len(matches_r3)
+            violations.append("Rule 3: Space inside brackets")
+
+        joined_text = self._join_continuation_lines(text)
+        raw_lines = [line.strip() for line in text.split('\n') if line.strip()]
+        raw_line_count = len(raw_lines)
+        raw_line_end_ratio = (
+            sum(1 for line in raw_lines if self.sentence_ender.search(line[-1])) / raw_line_count
+            if raw_line_count
+            else 0.0
+        )
+
+        # If many raw lines already look sentence-complete, treat each line as a sentence.
+        # This preserves expected behavior for sentence-per-line inputs while keeping
+        # continuation-line joining for OCR-like wrapped text.
+        use_raw_line_mode = raw_line_end_ratio >= 0.5
+        missing_fullstop = self._check_missing_fullstop(text if use_raw_line_mode else joined_text)
+        if missing_fullstop:
+            rule_hits["rule_4_missing_sentence_end"] = missing_fullstop
+            violations.append(
+                f"Rule 4: Missing sentence-ending punctuation - {missing_fullstop} sentence(s)"
+            )
+
+        matches_r5 = self.ellipsis_err.findall(text)
+        if matches_r5:
+            rule_hits["rule_5_ellipsis_error"] = len(matches_r5)
+            violations.append("Rule 5: Ellipsis should be exactly 3 dots (...)")
+
+        matches_r6 = self.mixed_abbrev.findall(text)
+        if matches_r6:
+            rule_hits["rule_6_mixed_abbrev"] = len(matches_r6)
+            violations.append("Rule 6: English abbreviation dots mixed with Sinhala text")
+
+        matches_r7 = self.missing_space_after_punct.findall(text)
+        if matches_r7:
+            rule_hits["rule_7_missing_space_after_punct"] = len(matches_r7)
+            violations.append(
+                f"Rule 7: Missing space after punctuation - {len(matches_r7)} instance(s)"
+            )
+
+        matches_r8 = self.repeated_punct.findall(text)
+        if matches_r8:
+            rule_hits["rule_8_repeated_punctuation"] = len(matches_r8)
+            violations.append(
+                f"Rule 8: Repeated punctuation marks - {len(matches_r8)} instance(s)"
+            )
+
+        matches_r8b = self.unicode_ellipsis_err.findall(text)
+        if matches_r8b:
+            rule_hits["rule_8b_unicode_ellipsis_error"] = len(matches_r8b)
+            violations.append(
+                f"Rule 8b: Invalid Unicode ellipsis usage - {len(matches_r8b)} instance(s)"
+            )
+
+        matches_r11 = self.repeated_dash.findall(text)
+        if matches_r11:
+            rule_hits["rule_11_repeated_dash"] = len(matches_r11)
+            violations.append(
+                f"Rule 11: Repeated dash usage (- / –) - {len(matches_r11)} instance(s)"
+            )
+
+        matches_r12 = self.standalone_dash.findall(text)
+        if matches_r12:
+            rule_hits["rule_12_standalone_dash"] = len(matches_r12)
+            violations.append(
+                f"Rule 12: Standalone dash without surrounding words - {len(matches_r12)} instance(s)"
+            )
+
+        unmatched_quotes, unmatched_brackets = self._count_unmatched_pairs(text)
+        if unmatched_quotes:
+            rule_hits["rule_9_unmatched_quotes"] = unmatched_quotes
+            violations.append("Rule 9: Unmatched quotation marks")
+        if unmatched_brackets:
+            rule_hits["rule_10_unmatched_brackets"] = unmatched_brackets
+            violations.append("Rule 10: Unmatched brackets")
+
+        grammar_issues = self._analyze_grammar(text)
+
+        joined_text = self._join_continuation_lines(text)
+        sentences = [s.strip() for s in re.split(r'[.!?।॥]+', joined_text) if s.strip()]
+        total_sentences = max(1, raw_line_count if use_raw_line_mode else len(sentences))
+        words = joined_text.split()
+
+        # 1) Punctuation accuracy (1.00)
+        wrong_punctuation_count = (
+            rule_hits.get("rule_1_space_before_punct", 0)
+            + rule_hits.get("rule_2_space_inside_quotes", 0)
+            + rule_hits.get("rule_2b_space_inside_smart_quotes", 0)
+            + rule_hits.get("rule_3_space_inside_brackets", 0)
+            + rule_hits.get("rule_5_ellipsis_error", 0)
+            + rule_hits.get("rule_6_mixed_abbrev", 0)
+            + rule_hits.get("rule_7_missing_space_after_punct", 0)
+            + rule_hits.get("rule_8_repeated_punctuation", 0)
+            + rule_hits.get("rule_8b_unicode_ellipsis_error", 0)
+            + rule_hits.get("rule_9_unmatched_quotes", 0)
+            + rule_hits.get("rule_10_unmatched_brackets", 0)
+            + rule_hits.get("rule_11_repeated_dash", 0)
+            + rule_hits.get("rule_12_standalone_dash", 0)
+        )
+        missing_punctuation_count = rule_hits.get("rule_4_missing_sentence_end", 0)
+        punctuation_error_units = wrong_punctuation_count + missing_punctuation_count
+        punctuation_error_rate = punctuation_error_units / max(1, total_sentences)
+        if punctuation_error_units == 0:
+            punctuation_deduction = 0.0
+        elif punctuation_error_rate <= 0.05:
+            punctuation_deduction = 0.1
+        elif punctuation_error_rate <= 0.10:
+            punctuation_deduction = 0.2
+        elif punctuation_error_rate <= 0.20:
+            punctuation_deduction = 0.4
+        elif punctuation_error_rate <= 0.30:
+            punctuation_deduction = 0.6
+        elif punctuation_error_rate <= 0.40:
+            punctuation_deduction = 0.8
+        else:
+            punctuation_deduction = 1.0
+        punctuation_score = max(0.0, 1.0 - punctuation_deduction)
+
+        # 2) Word separation & spacing (0.50)
+        long_token_count = len([w for w in words if len(w) > self.max_word_length])
+        multi_space_count = len(re.findall(r" {2,}", text))
+        word_sep_deduction = min(0.5, (long_token_count * 0.2) + (multi_space_count * 0.05))
+        word_sep_score = max(0.0, 0.5 - word_sep_deduction)
+
+        # 3) Paragraph structure (0.75)
+        paragraphs = [p for p in re.split(r"\n\s*\n+", text.strip()) if p.strip()]
+        paragraph_count = len(paragraphs)
+        run_on_count = sum(1 for s in sentences if len(s.split()) > 35)
+        long_without_punct_count = 0
+        for raw_segment in [seg.strip() for seg in re.split(r"\n+", joined_text) if seg.strip()]:
+            if len(raw_segment.split()) > 35 and not re.search(
+                rf"[{re.escape(self.valid_sentence_enders)},;:…]",
+                raw_segment,
+            ):
+                long_without_punct_count += 1
+        paragraph_deduction = 0.0
+        if paragraph_count <= 1 and len(words) >= 120:
+            paragraph_deduction += 0.25
+        paragraph_deduction += min(0.5, run_on_count * 0.2)
+        # Exact anti-boost rule:
+        # If sentence length > 35 words AND no punctuation -> structural penalty -0.2
+        paragraph_deduction += min(0.4, long_without_punct_count * 0.2)
+        paragraph_deduction = min(0.75, paragraph_deduction)
+        paragraph_score = max(0.0, 0.75 - paragraph_deduction)
+
+        # 4) Layout structure (0.75)
+        layout_deduction = min(
+            0.75,
+            (unmatched_quotes * 0.15)
+            + (unmatched_brackets * 0.15)
+            + min(0.3, rule_hits.get("rule_7_missing_space_after_punct", 0) * 0.05),
+        )
+        layout_score = max(0.0, 0.75 - layout_deduction)
+
+        technical_rule_score = round(
+            punctuation_score + word_sep_score + paragraph_score + layout_score, 2
+        )
+        total_penalty = round(max(0.0, 3.0 - technical_rule_score), 2)
+        punct_penalty = round(1.0 - punctuation_score, 2)
+        grammar_penalty = round(max(0.0, (0.5 - word_sep_score) + (0.75 - paragraph_score)), 2)
+
+        return {
+            "penalty": total_penalty,
+            "punctuation_penalty": punct_penalty,
+            "grammar_penalty": grammar_penalty,
+            "rule_hits": rule_hits,
+            "technical_rule_score": technical_rule_score,
+            "rule_based_technical_cap": technical_rule_score,
+            "technical_breakdown": {
+                "punctuation_score_1": round(punctuation_score, 2),
+                "word_separation_score_0_5": round(word_sep_score, 2),
+                "paragraph_structure_score_0_75": round(paragraph_score, 2),
+                "layout_structure_score_0_75": round(layout_score, 2),
+                "punctuation_symbols_supported": [
+                    ".", ",", ";", ":", "?", "!", "“ ”", "‘ ’", "-", "–", "…", "()"
+                ],
+                "wrong_punctuation_count": wrong_punctuation_count,
+                "missing_punctuation_count": missing_punctuation_count,
+                "punctuation_error_units": punctuation_error_units,
+                "punctuation_error_rate": round(punctuation_error_rate, 4),
+                "sentence_count": total_sentences,
+                "paragraph_count": paragraph_count,
+                "long_sentence_no_punctuation_count": long_without_punct_count,
+            },
+            "violations": violations,
+            "grammar_issues": grammar_issues,
+        }
     def _join_continuation_lines(self, text: str) -> str:
         """
         Join continuation lines back into complete sentences.
@@ -348,7 +560,7 @@ class RubricEvaluator:
     # ═══════════════════════════════════════════════════════════════
     # SECTION 3: TOPIC / THEME RELEVANCE
     # Uses DUAL approach: keyword frequency + XLM-R cosine similarity
-    # Weighted combination (keyword=60%, cosine=40%)
+    # Weighted combination (keyword=80%, cosine=20%)
     # Affects: richness_5
     # ═══════════════════════════════════════════════════════════════
     
@@ -483,14 +695,16 @@ class RubricEvaluator:
         cosine_score = max(0.0, sim)
         print(f"[HYBRID] Cosine Similarity: {cosine_score:.4f}")
 
-        # ─── Combined Score: Weighted (keyword=60%, cosine=40%) ───
+        # ─── Combined Score: Weighted (keyword=80%, cosine=20%) ───
         # Keyword is the primary signal (reliable, exact match).
         # Cosine is secondary (helps with synonyms/paraphrasing but
         # is inflated for same-language text in XLM-R).
-        KEYWORD_WEIGHT = 0.6
-        COSINE_WEIGHT = 0.4
+        KEYWORD_WEIGHT = 0.8
+        COSINE_WEIGHT = 0.2
         
         final_score = (keyword_score * KEYWORD_WEIGHT) + (cosine_score * COSINE_WEIGHT)
+        if len(topic_words) <= 2 and keyword_score == 0.0:
+            final_score = min(final_score, 0.35)
         print(f"[HYBRID] Final Relevance (keyword×{KEYWORD_WEIGHT} + cosine×{COSINE_WEIGHT}): {final_score:.3f}")
         
         return final_score
@@ -509,42 +723,56 @@ class RubricEvaluator:
         
         Returns:
             {
-                "theme_penalty": float (0..2.0),
+                "theme_penalty": float (0..5.0),
                 "word_count_penalty": float (0..1.5),
-                "total_richness_penalty": float (0..3.5)
+                "total_richness_penalty": float (0..6.5),
+                "force_richness_zero": bool
             }
         """
         # ─── Theme Relevance Penalty ───
-        # Calibrated for dual keyword+cosine approach
-        # 0.55+ means either keyword frequency OR cosine similarity is strong
-        if relevance_score >= 0.55:
-            theme_penalty = 0.0   # Clearly relevant → no penalty
-        elif relevance_score >= 0.35:
-            theme_penalty = 0.5   # Somewhat relevant → mild penalty
+        # Required macro-level rubric mapping:
+        # >0.8: 0, 0.7-0.8: 0.5, 0.6-0.7: 1, 0.5-0.6: 2, 0.4-0.5: 3, <0.4: 4-5
+        if relevance_score > 0.8:
+            theme_penalty = 0.0
+        elif relevance_score >= 0.7:
+            theme_penalty = 0.5
+        elif relevance_score >= 0.6:
+            theme_penalty = 1.0
+        elif relevance_score >= 0.5:
+            theme_penalty = 2.0
+        elif relevance_score >= 0.4:
+            theme_penalty = 3.0
         elif relevance_score >= 0.2:
-            theme_penalty = 1.0   # Partially off-topic → moderate penalty
+            theme_penalty = 4.0
         else:
-            theme_penalty = 2.0   # Off-topic → severe penalty
+            theme_penalty = 5.0
+
+        # Completely off-topic essays should receive zero richness.
+        # We use a strict relevance threshold for this forced clamp.
+        force_richness_zero = relevance_score < 0.25
         
         # ─── Word Count Penalty (Marking Scheme: min 150 words) ───
         if word_count >= 150:
             wc_penalty = 0.0
-        elif word_count >= 100:
-            # Between 100-149 words: proportional penalty
-            wc_penalty = (150 - word_count) / 150 * 1.0  # Up to ~0.33
-        elif word_count >= 50:
-            # Between 50-99 words: significant penalty
-            wc_penalty = 0.5 + (100 - word_count) / 100 * 0.5  # 0.5 to 1.0
+        elif word_count >= 130:
+            wc_penalty = 0.5
+        elif word_count >= 110:
+            wc_penalty = 1.0
+        elif word_count >= 90:
+            wc_penalty = 2.0
         else:
-            # Below 50 words: severe penalty
-            wc_penalty = 1.5  # Maximum word count penalty
+            wc_penalty = 3.0
         
         return {
             "theme_penalty": round(theme_penalty, 2),
             "word_count_penalty": round(wc_penalty, 2),
-            "total_richness_penalty": round(min(3.5, theme_penalty + wc_penalty), 2)
+            "total_richness_penalty": round(min(8.0, theme_penalty + wc_penalty), 2),
+            "force_richness_zero": force_richness_zero,
         }
 
 
 # Module-level singleton
 rubric_evaluator = RubricEvaluator()
+
+
+

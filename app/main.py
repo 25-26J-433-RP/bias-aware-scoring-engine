@@ -113,6 +113,7 @@ def score_sinhala_ml(payload: SinhalaEssayIn, request: Request):
         "details": {
             "dyslexic_flag": payload.dyslexic_flag,
             "error_tags": payload.error_tags,
+            "topic": payload.topic,
             "model": "✅ RETRAINED MODEL (Cloud)",
             "detected_grade": detected_grade,
             "grade_auto_detected": payload.grade is None
@@ -185,3 +186,5 @@ if __name__ == "__main__":
         port=port,
         log_level="info"
     )
+
+
