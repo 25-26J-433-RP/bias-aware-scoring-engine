@@ -164,7 +164,7 @@ class RubricEvaluator:
 
         return unmatched_quotes, unmatched_brackets
 
-    def analyze_technical(self, text: str) -> Dict[str, Any]:
+    def analyze_technical(self, text: str, grade: Optional[int] = None) -> Dict[str, Any]:
         """
         Evaluate technical skills (03 marks) using explicit sub-allocation:
           - Punctuation accuracy: 1.00
@@ -282,7 +282,8 @@ class RubricEvaluator:
             rule_hits["rule_10_unmatched_brackets"] = unmatched_brackets
             violations.append("Rule 10: Unmatched brackets")
 
-        grammar_issues = self._analyze_grammar(text)
+        grammar_checks_evaluated = not (grade is not None and grade <= 5)
+        grammar_issues = self._analyze_grammar(text) if grammar_checks_evaluated else []
 
         joined_text = self._join_continuation_lines(text)
         sentences = [s.strip() for s in re.split(r'[.!?।॥]+', joined_text) if s.strip()]
@@ -389,9 +390,11 @@ class RubricEvaluator:
                 "sentence_count": total_sentences,
                 "paragraph_count": paragraph_count,
                 "long_sentence_no_punctuation_count": long_without_punct_count,
+                "grammar_checks_evaluated": grammar_checks_evaluated,
             },
             "violations": violations,
             "grammar_issues": grammar_issues,
+            "grammar_checks_evaluated": grammar_checks_evaluated,
         }
     def _join_continuation_lines(self, text: str) -> str:
         """

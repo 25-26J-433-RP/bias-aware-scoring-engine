@@ -128,3 +128,13 @@ def test_one_missing_full_stop_has_small_effect_with_many_sentences():
         - b["technical_breakdown"]["punctuation_score_1"],
         2,
     ) == 0.1
+
+
+def test_low_grades_do_not_emit_grammar_issue_flags():
+    text = "වචන ටිකක් මෙහි ලියනවා"
+    low_grade = rubric_evaluator.analyze_technical(text, grade=3)
+    upper_grade = rubric_evaluator.analyze_technical(text, grade=7)
+
+    assert low_grade["grammar_checks_evaluated"] is False
+    assert low_grade["grammar_issues"] == []
+    assert upper_grade["grammar_checks_evaluated"] is True

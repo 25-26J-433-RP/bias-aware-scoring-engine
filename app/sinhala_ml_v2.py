@@ -428,7 +428,7 @@ def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False, topi
     # HYBRID PHASE 2: Technical Analysis → affects technical_3
     # Punctuation rules (6) + Heuristic Grammar (5 checks)
     # ══════════════════════════════════════════════════════════════
-    tech_analysis = rubric_evaluator.analyze_technical(cleaned_text)
+    tech_analysis = rubric_evaluator.analyze_technical(cleaned_text, grade=grade)
     technical_pre_rule = technical
     technical_after_penalty = technical_pre_rule - tech_analysis["penalty"]
     technical = min(technical_pre_rule, tech_analysis["technical_rule_score"])
@@ -500,6 +500,7 @@ def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False, topi
         "technical_penalty": tech_analysis["penalty"],
         "technical_punctuation_penalty": tech_analysis.get("punctuation_penalty", 0.0),
         "technical_grammar_penalty": tech_analysis.get("grammar_penalty", 0.0),
+        "grammar_checks_evaluated": bool(tech_analysis.get("grammar_checks_evaluated", True)),
         "technical_rule_hits": tech_analysis.get("rule_hits", {}),
         "technical_breakdown": tech_analysis.get("technical_breakdown", {}),
         "technical_rule_cap": tech_analysis.get("rule_based_technical_cap", 3.0),
