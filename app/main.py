@@ -19,7 +19,7 @@ from .scorer import score_essay
 from .sinhala_baseline import baseline_sinhala_score
 from .sinhala_ml_v2 import score_sinhala_ml_v2
 from .grade_detector import infer_grade_from_text
-from .fairness import spd, dir_ratio, eod, binarize
+from .fairness import FAIRNESS_PASS_CUTOFF, spd, dir_ratio, eod, binarize
 
 # -----------------------------
 # Security Configuration
@@ -132,7 +132,7 @@ def fairness_eval(payload: List[FairnessEvalIn], request: Request):
     y_true = [p.y_true for p in payload]
     groups = [p.dyslexic_flag for p in payload]
 
-    y_hat_bin = binarize(scores)
+    y_hat_bin = binarize(scores, cutoff=FAIRNESS_PASS_CUTOFF)
 
     return FairnessReport(
         spd=spd(y_hat_bin, groups),

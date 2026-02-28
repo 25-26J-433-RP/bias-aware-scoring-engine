@@ -5,7 +5,7 @@ from firebase_admin import credentials, firestore
 from datetime import datetime
 from scipy import stats  # For statistical significance testing
 
-from app.fairness import binarize, spd, dir_ratio
+from app.fairness import FAIRNESS_PASS_CUTOFF, binarize, spd, dir_ratio
 
 # =================================================
 # NOTE:
@@ -136,8 +136,8 @@ def run_fairness_eval():
         scores = df["score"].tolist()
         groups = df["dyslexic_flag"].tolist()
 
-        # Sri Lankan education standard: 45% is passing grade
-        y_hat = binarize(scores, cutoff=45)
+        # Shared pass/fail threshold used across fairness APIs and batch analysis.
+        y_hat = binarize(scores, cutoff=FAIRNESS_PASS_CUTOFF)
 
         # Calculate group-wise statistics for calibration
         dyslexic_scores = df[df["dyslexic_flag"] == True]["score"].tolist()
@@ -193,7 +193,7 @@ def run_fairness_eval():
             "grade": grade,
             "spd": round(spd(y_hat, groups), 3),
             "dir": round(dir_ratio(y_hat, groups), 3),
-            "threshold": 45,  # Sri Lankan passing grade
+            "threshold": FAIRNESS_PASS_CUTOFF,
             "sample_size": len(df),
             "n_dyslexic": len(dyslexic_scores),
             "n_non_dyslexic": len(non_dyslexic_scores),
