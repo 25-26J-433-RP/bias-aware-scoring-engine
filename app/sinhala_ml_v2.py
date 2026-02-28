@@ -376,8 +376,13 @@ def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False, topi
         return apply_fairness_mitigation(scores, dyslexic_flag, grade)
     
 
+    # Normalize punctuation before ML scoring to reduce punctuation-driven noise.
+    model_input_text = rubric_evaluator.normalize_for_model(cleaned_text)
+    if not model_input_text:
+        model_input_text = cleaned_text
+
     enc = tokenizer(
-        cleaned_text,
+        model_input_text,
         return_tensors="pt",
         truncation=True,
         max_length=512
@@ -428,7 +433,9 @@ def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False, topi
     # Punctuation rules (6) + Heuristic Grammar (5 checks)
     # ══════════════════════════════════════════════════════════════
     tech_analysis = rubric_evaluator.analyze_technical(cleaned_text)
-    technical -= tech_analysis["penalty"]
+    technical_pre_rule = technical
+    technical_after_penalty = technical_pre_rule - tech_analysis["penalty"]
+    technical = min(technical_pre_rule, tech_analysis["technical_rule_score"])
     technical = max(0.3, technical)  # Floor of 0.3 for technical
     
     if tech_analysis["violations"]:
@@ -455,8 +462,11 @@ def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False, topi
         print(f"[HYBRID] Word Count Penalty: -{richness_penalty_info['word_count_penalty']} "
               f"(Length: {text_length}/150)")
     
-    # Floor for richness
-    richness = max(0.3, richness)
+    # Floor for richness, except for completely off-topic essays.
+    if richness_penalty_info.get("force_richness_zero", False):
+        richness = 0.0
+    else:
+        richness = max(0.3, richness)
 
     # ══════════════════════════════════════════════════════════════
     # FINAL SCORING
@@ -487,9 +497,19 @@ def score_sinhala_ml_v2(text: str, grade: int, dyslexic_flag: bool = False, topi
         "theme_penalty": richness_penalty_info["theme_penalty"],
         "word_count": text_length,
         "word_count_penalty": richness_penalty_info["word_count_penalty"],
+        "force_richness_zero": bool(richness_penalty_info.get("force_richness_zero", False)),
+        "model_input_word_count": len(model_input_text.split()),
         "technical_violations": tech_analysis["violations"],
         "grammar_issues": tech_analysis["grammar_issues"],
         "technical_penalty": tech_analysis["penalty"],
+        "technical_punctuation_penalty": tech_analysis.get("punctuation_penalty", 0.0),
+        "technical_grammar_penalty": tech_analysis.get("grammar_penalty", 0.0),
+        "technical_rule_hits": tech_analysis.get("rule_hits", {}),
+        "technical_breakdown": tech_analysis.get("technical_breakdown", {}),
+        "technical_rule_cap": tech_analysis.get("rule_based_technical_cap", 3.0),
+        "technical_pre_rule_score": round(technical_pre_rule, 3),
+        "technical_after_penalty_pre_cap": round(technical_after_penalty, 3),
+        "model_punctuation_normalized": True,
         "grade_adjustment_factor": round(adjustment_factor, 3)
     }
 
