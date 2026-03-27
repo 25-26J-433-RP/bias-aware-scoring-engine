@@ -1,5 +1,0 @@
-TECHNICAL SKILLS BIAS ANALYSIS REPORT
-Sample Size: 42
-Non-Dyslexic Avg Technical Error: -0.818
-Dyslexic Avg Technical Error: 0.312
-Evidence of Penalty: The model penalizes dyslexic students by an additional 1.130 marks on average compared to non-dyslexic peers.
